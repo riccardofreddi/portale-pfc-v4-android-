@@ -440,7 +440,8 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                     onDismiss = { viewModel.setPreviewFile(null) },
                     onDownload = {
                         viewModel.showSnackbar("Download completato: ${file.nome}")
-                    }
+                    },
+                    onToggleFavorite = { viewModel.toggleFavorite(file) }
                 )
             }
         }

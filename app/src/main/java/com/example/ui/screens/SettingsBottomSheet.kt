@@ -32,12 +32,30 @@ fun SettingsBottomSheet(
     isDarkMode: Boolean,
     fcmStatus: FcmStatusResponse?,
     fcmTesting: Boolean,
+    isRemindersEnabled: Boolean,
+    isRemindDocumentsEnabled: Boolean,
+    isRemindMessagesEnabled: Boolean,
+    isRemindDeadlinesEnabled: Boolean,
+    reminderIntervalMin: Int,
+    hasNotificationPermission: Boolean,
+    onRequestPermission: () -> Unit,
+    onToggleReminders: (Boolean) -> Unit,
+    onToggleRemindDocuments: (Boolean) -> Unit,
+    onToggleRemindMessages: (Boolean) -> Unit,
+    onToggleRemindDeadlines: (Boolean) -> Unit,
+    onSetReminderInterval: (Int) -> Unit,
+    onTestDocumentNotification: () -> Unit,
+    onTestMessageNotification: () -> Unit,
+    onTestDeadlineNotification: () -> Unit,
+    onSimulateStudioDocument: () -> Unit,
+    onSimulateStudioMessage: () -> Unit,
     onDismiss: () -> Unit,
     onToggleDarkMode: () -> Unit,
     onSendTestPush: () -> Unit,
     onLogout: () -> Unit
 ) {
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    var showIntervalDropdown by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -119,7 +137,329 @@ fun SettingsBottomSheet(
                 }
             }
 
-            // Push Notifications Diagnostics Card
+            // === LOCAL NOTIFICATION SYSTEM & STUDIO REMINDERS CARD ===
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("local_notification_settings_card"),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.NotificationsActive,
+                                contentDescription = null,
+                                tint = GeoPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "PROMEMORIA LOCALI STUDIO",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.8.sp
+                            )
+                        }
+
+                        Surface(
+                            color = if (hasNotificationPermission && isRemindersEnabled) PfcSuccessSoft else PfcWarningSoft,
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Text(
+                                text = if (hasNotificationPermission && isRemindersEnabled) "Attivi" else "Non attivi",
+                                color = if (hasNotificationPermission && isRemindersEnabled) PfcSuccess else PfcWarning,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    // System Permission Banner (if needed)
+                    if (!hasNotificationPermission) {
+                        Surface(
+                            color = PfcWarningSoft,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, PfcWarning.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = PfcWarning, modifier = Modifier.size(22.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Permesso Notifiche Richiesto", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = PfcWarning)
+                                    Text("Consenti all'app di mostrare notifiche per ricevere promemoria di F24 e messaggi.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
+                                }
+                                Button(
+                                    onClick = onRequestPermission,
+                                    colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
+                                    shape = RoundedCornerShape(50),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Consenti", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    // Main Master Switch: Automatic Reminders
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Promemoria Automatici", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("Ricevi notifiche quando sono disponibili nuovi documenti o messaggi", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = isRemindersEnabled,
+                            onCheckedChange = { onToggleReminders(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = GeoPrimary
+                            )
+                        )
+                    }
+
+                    if (isRemindersEnabled) {
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                        // Sub-option: Nuovi Documenti & F24
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.Description, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(18.dp))
+                                Column {
+                                    Text("Nuovi Modelli F24 e Documenti", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                    Text("Avviso per F24, dichiarazioni e bilanci", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Switch(
+                                checked = isRemindDocumentsEnabled,
+                                onCheckedChange = { onToggleRemindDocuments(it) },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = GeoPrimary)
+                            )
+                        }
+
+                        // Sub-option: Messaggi & Richieste
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.Chat, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(18.dp))
+                                Column {
+                                    Text("Messaggi & Richieste dello Studio", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                    Text("Avviso per comunicazioni e richieste file", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Switch(
+                                checked = isRemindMessagesEnabled,
+                                onCheckedChange = { onToggleRemindMessages(it) },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = GeoPrimary)
+                            )
+                        }
+
+                        // Sub-option: Scadenze Fiscali
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Filled.Schedule, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(18.dp))
+                                Column {
+                                    Text("Scadenze Fiscali e Tributarie", fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                    Text("Promemoria per versamenti in arrivo", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                            Switch(
+                                checked = isRemindDeadlinesEnabled,
+                                onCheckedChange = { onToggleRemindDeadlines(it) },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = GeoPrimary)
+                            )
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                        // Interval Frequency Selector
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Frequenza Controllo Promemoria", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Box {
+                                OutlinedCard(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showIntervalDropdown = true },
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        val label = when (reminderIntervalMin) {
+                                            15 -> "Ogni 15 Minuti (Demo / Frequente)"
+                                            60 -> "Ogni Ora (Consigliato)"
+                                            360 -> "Ogni 6 Ore"
+                                            1440 -> "Una volta al Giorno"
+                                            else -> "$reminderIntervalMin Minuti"
+                                        }
+                                        Text(label, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                        Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = showIntervalDropdown,
+                                    onDismissRequest = { showIntervalDropdown = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Ogni 15 Minuti (Demo / Frequente)") },
+                                        onClick = {
+                                            onSetReminderInterval(15)
+                                            showIntervalDropdown = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Ogni Ora (Consigliato)") },
+                                        onClick = {
+                                            onSetReminderInterval(60)
+                                            showIntervalDropdown = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Ogni 6 Ore") },
+                                        onClick = {
+                                            onSetReminderInterval(360)
+                                            showIntervalDropdown = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Una volta al Giorno") },
+                                        onClick = {
+                                            onSetReminderInterval(1440)
+                                            showIntervalDropdown = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                        // Live Testing Buttons
+                        Text(
+                            text = "TEST NOTIFICHE LOCALI & SIMULAZIONE STUDIO",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilledTonalButton(
+                                onClick = onTestDocumentNotification,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Filled.Description, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Test F24", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            FilledTonalButton(
+                                onClick = onTestMessageNotification,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Test Messaggio", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            FilledTonalButton(
+                                onClick = onTestDeadlineNotification,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Icon(Icons.Filled.Schedule, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Test Scadenza", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        // Simulate Real Incoming Studio Upload & Notification
+                        Button(
+                            onClick = onSimulateStudioDocument,
+                            colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
+                            shape = RoundedCornerShape(50),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Simula Nuovo Documento dallo Studio", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = onSimulateStudioMessage,
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, GeoPrimary),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = GeoPrimary),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.MarkEmailUnread, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Simula Richiesta File dal Commercialista", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            // Push Notifications Diagnostics Card (FCM)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -138,7 +478,7 @@ fun SettingsBottomSheet(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "STATO NOTIFICHE PUSH (FCM)",
+                            text = "CANALE SERVER PUSH (FCM)",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Bold,
@@ -160,7 +500,7 @@ fun SettingsBottomSheet(
                     }
 
                     Text(
-                        text = "Il dispositivo è configurato per ricevere notifiche su nuove scadenze fiscali, modelli F24 e messaggi.",
+                        text = "Il dispositivo è registrato per ricevere notifiche push remote dallo studio PFC.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -183,7 +523,7 @@ fun SettingsBottomSheet(
                         } else {
                             Icon(Icons.Filled.NotificationsActive, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Invia Notifica Push di Prova", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Invia Push Server di Prova", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }
@@ -252,7 +592,7 @@ fun SettingsBottomSheet(
                             Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Column {
                                 Text("Versione App", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("Portale PFC Native Android v2.1", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Portale PFC Native Android v2.2 (con Notifiche Locali)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -304,4 +644,3 @@ fun SettingsBottomSheet(
         )
     }
 }
-

@@ -1,13 +1,19 @@
 package com.example
 
+import android.Manifest
+import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -22,28 +28,58 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.notification.LocalNotificationHelper
 import com.example.ui.components.PfcTopBar
 import com.example.ui.screens.*
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.PfcViewModel
 
 class MainActivity : ComponentActivity() {
+
+    private var pfcViewModel: PfcViewModel? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             val viewModel: PfcViewModel = viewModel()
+            pfcViewModel = viewModel
             val isDarkMode by viewModel.isDarkMode.collectAsState()
 
             MyApplicationTheme(darkTheme = isDarkMode) {
-                MainAppContent(viewModel = viewModel)
+                MainAppContent(viewModel = viewModel, onActivityIntent = { processIntent(intent, viewModel) })
             }
+        }
+        processIntent(intent, null)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pfcViewModel?.let { processIntent(intent, it) }
+    }
+
+    private fun processIntent(intent: Intent?, vm: PfcViewModel?) {
+        if (intent == null || vm == null) return
+
+        val targetTab = if (intent.hasExtra(LocalNotificationHelper.EXTRA_TARGET_TAB)) {
+            intent.getIntExtra(LocalNotificationHelper.EXTRA_TARGET_TAB, 0)
+        } else null
+
+        val year = intent.getStringExtra(LocalNotificationHelper.EXTRA_YEAR)
+        val folder = intent.getStringExtra(LocalNotificationHelper.EXTRA_FOLDER)
+        val docKey = intent.getStringExtra(LocalNotificationHelper.EXTRA_DOC_KEY)
+        val msgId = intent.getStringExtra(LocalNotificationHelper.EXTRA_MSG_ID)
+        val showNotifSheet = intent.getBooleanExtra(LocalNotificationHelper.EXTRA_SHOW_NOTIF_SHEET, false)
+
+        if (targetTab != null || showNotifSheet || msgId != null || folder != null) {
+            vm.handleNotificationIntent(targetTab, year, folder, docKey, msgId, showNotifSheet)
         }
     }
 }
 
 @Composable
-fun MainAppContent(viewModel: PfcViewModel) {
+fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
     val onboardingDone by viewModel.onboardingDone.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
@@ -63,7 +99,31 @@ fun MainAppContent(viewModel: PfcViewModel) {
     val fcmStatus by viewModel.fcmStatus.collectAsState()
     val fcmTesting by viewModel.fcmTesting.collectAsState()
 
+    // Notification Reminder Settings
+    val isRemindersEnabled by viewModel.isRemindersEnabled.collectAsState()
+    val isRemindDocumentsEnabled by viewModel.isRemindDocumentsEnabled.collectAsState()
+    val isRemindMessagesEnabled by viewModel.isRemindMessagesEnabled.collectAsState()
+    val isRemindDeadlinesEnabled by viewModel.isRemindDeadlinesEnabled.collectAsState()
+    val reminderIntervalMin by viewModel.reminderIntervalMin.collectAsState()
+    val hasNotificationPermission by viewModel.hasNotificationPermission.collectAsState()
+
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Runtime Permission Launcher for Android 13+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { _ ->
+        viewModel.updateNotificationPermissionStatus()
+    }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!hasNotificationPermission) {
+                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        onActivityIntent()
+    }
 
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let { msg ->
@@ -98,7 +158,7 @@ fun MainAppContent(viewModel: PfcViewModel) {
                         title = "Portale PFC",
                         subtitle = subtitle,
                         unreadNotifCount = unreadNotifCount,
-                        userInitials = currentUser?.name ?: "PF",
+                        userInitials = (currentUser?.name ?: "PF").take(2).uppercase(),
                         onNotifClick = { viewModel.setShowNotifSheet(true) },
                         onProfileClick = { viewModel.setShowSettingsSheet(true) }
                     )
@@ -147,29 +207,20 @@ fun MainAppContent(viewModel: PfcViewModel) {
                             selected = selectedTab == 1,
                             onClick = { viewModel.setTab(1) },
                             icon = {
-                                Box {
-                                    Icon(
-                                        imageVector = if (selectedTab == 1) Icons.Filled.Chat else Icons.Outlined.ChatBubbleOutline,
-                                        contentDescription = "Messaggi"
-                                    )
+                                BadgedBox(badge = {
                                     if (unreadMsgCount > 0) {
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .offset(x = 4.dp, y = (-2).dp)
-                                                .size(14.dp)
-                                                .clip(CircleShape)
-                                                .background(PfcDanger),
-                                            contentAlignment = Alignment.Center
+                                        Badge(
+                                            containerColor = GeoPrimary,
+                                            contentColor = Color.White
                                         ) {
-                                            Text(
-                                                text = unreadMsgCount.toString(),
-                                                color = Color.White,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
+                                            Text(unreadMsgCount.toString(), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                         }
                                     }
+                                }) {
+                                    Icon(
+                                        imageVector = if (selectedTab == 1) Icons.Filled.Chat else Icons.Outlined.Chat,
+                                        contentDescription = "Messaggi"
+                                    )
                                 }
                             },
                             label = {
@@ -188,7 +239,7 @@ fun MainAppContent(viewModel: PfcViewModel) {
                             onClick = { viewModel.setTab(2) },
                             icon = {
                                 Icon(
-                                    imageVector = if (selectedTab == 2) Icons.Filled.Lock else Icons.Outlined.Lock,
+                                    imageVector = if (selectedTab == 2) Icons.Filled.CloudUpload else Icons.Outlined.CloudUpload,
                                     contentDescription = "Cassetto"
                                 )
                             },
@@ -202,7 +253,7 @@ fun MainAppContent(viewModel: PfcViewModel) {
                             colors = navItemColors
                         )
 
-                        // 3: Attività
+                        // 3: Attivita
                         NavigationBarItem(
                             selected = selectedTab == 3,
                             onClick = { viewModel.setTab(3) },
@@ -223,18 +274,31 @@ fun MainAppContent(viewModel: PfcViewModel) {
                         )
                     }
                 },
-                snackbarHost = { SnackbarHost(snackbarHostState) }
+                snackbarHost = {
+                    SnackbarHost(snackbarHostState) { data ->
+                        Snackbar(
+                            snackbarData = data,
+                            containerColor = MaterialTheme.colorScheme.inverseSurface,
+                            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+                }
             ) { innerPadding ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
+                        .background(MaterialTheme.colorScheme.background)
                 ) {
                     AnimatedContent(
                         targetState = selectedTab,
+                        transitionSpec = {
+                            fadeIn() togetherWith fadeOut()
+                        },
                         label = "tab_transition"
-                    ) { tab ->
-                        when (tab) {
+                    ) { target ->
+                        when (target) {
                             0 -> {
                                 val years by viewModel.years.collectAsState()
                                 val selectedYear by viewModel.selectedYear.collectAsState()
@@ -244,6 +308,7 @@ fun MainAppContent(viewModel: PfcViewModel) {
                                 val filesLoading by viewModel.filesLoading.collectAsState()
                                 val searchQuery by viewModel.searchQuery.collectAsState()
                                 val searchResults by viewModel.searchResults.collectAsState()
+                                val isSearching by viewModel.isSearching.collectAsState()
                                 val filterFavoritesOnly by viewModel.filterFavoritesOnly.collectAsState()
                                 val selectedBatchKeys by viewModel.selectedBatchKeys.collectAsState()
 
@@ -268,9 +333,7 @@ fun MainAppContent(viewModel: PfcViewModel) {
                                     onSelectAllBatch = { viewModel.selectAllFiles() },
                                     onClearBatch = { viewModel.clearBatchSelection() },
                                     onDownloadBatch = { viewModel.downloadBatchSelected() },
-                                    onDownloadSingle = { file ->
-                                        viewModel.showSnackbar("Download completato: ${file.nome}")
-                                    }
+                                    onDownloadSingle = { viewModel.showSnackbar("Scaricato in download: ${it.nome}") }
                                 )
                             }
                             1 -> {
@@ -333,13 +396,36 @@ fun MainAppContent(viewModel: PfcViewModel) {
                 )
             }
 
-            // Settings Bottom Sheet
+            // Settings Bottom Sheet (with local reminders & diagnostics)
             if (showSettingsSheet) {
                 SettingsBottomSheet(
                     user = currentUser,
                     isDarkMode = isDarkMode,
                     fcmStatus = fcmStatus,
                     fcmTesting = fcmTesting,
+                    isRemindersEnabled = isRemindersEnabled,
+                    isRemindDocumentsEnabled = isRemindDocumentsEnabled,
+                    isRemindMessagesEnabled = isRemindMessagesEnabled,
+                    isRemindDeadlinesEnabled = isRemindDeadlinesEnabled,
+                    reminderIntervalMin = reminderIntervalMin,
+                    hasNotificationPermission = hasNotificationPermission,
+                    onRequestPermission = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            viewModel.updateNotificationPermissionStatus()
+                        }
+                    },
+                    onToggleReminders = { viewModel.setRemindersEnabled(it) },
+                    onToggleRemindDocuments = { viewModel.setRemindDocumentsEnabled(it) },
+                    onToggleRemindMessages = { viewModel.setRemindMessagesEnabled(it) },
+                    onToggleRemindDeadlines = { viewModel.setRemindDeadlinesEnabled(it) },
+                    onSetReminderInterval = { viewModel.setReminderInterval(it) },
+                    onTestDocumentNotification = { viewModel.triggerTestDocumentNotification() },
+                    onTestMessageNotification = { viewModel.triggerTestMessageNotification() },
+                    onTestDeadlineNotification = { viewModel.triggerTestDeadlineNotification() },
+                    onSimulateStudioDocument = { viewModel.simulateIncomingStudioDocument() },
+                    onSimulateStudioMessage = { viewModel.simulateIncomingStudioMessage() },
                     onDismiss = { viewModel.setShowSettingsSheet(false) },
                     onToggleDarkMode = { viewModel.toggleDarkMode() },
                     onSendTestPush = { viewModel.sendTestPushNotification() },

@@ -18,6 +18,9 @@ interface DocumentDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(documents: List<CachedDocumentEntity>)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(document: CachedDocumentEntity)
+
     @Query("UPDATE cached_documents SET isPreferito = :isPreferito WHERE `key` = :key")
     suspend fun updatePreferito(key: String, isPreferito: Boolean)
 
@@ -32,6 +35,9 @@ interface MessaggioDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(messaggi: List<CachedMessaggioEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(messaggio: CachedMessaggioEntity)
 
     @Query("UPDATE cached_messaggi SET letto = :letto WHERE id = :id")
     suspend fun setLetto(id: String, letto: Boolean)
@@ -74,6 +80,9 @@ interface NotificaDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(notifiche: List<CachedNotificaEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(notifica: CachedNotificaEntity)
 
     @Query("UPDATE cached_notifiche SET letta = 1 WHERE id = :id")
     suspend fun markAsRead(id: String)

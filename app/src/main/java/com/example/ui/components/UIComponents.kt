@@ -37,8 +37,9 @@ fun PfcTopBar(
     onProfileClick: () -> Unit = {}
 ) {
     Surface(
-        color = PfcNavyDark,
-        shadowElevation = 4.dp
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 1.dp
     ) {
         Row(
             modifier = Modifier
@@ -51,15 +52,15 @@ fun PfcTopBar(
             // Brand Group
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(12.dp))
                         .background(
                             Brush.linearGradient(
-                                listOf(PfcAmber, PfcAmberDark)
+                                listOf(GeoPrimary, GeoOnPrimaryContainer)
                             )
                         ),
                     contentAlignment = Alignment.Center
@@ -76,14 +77,14 @@ fun PfcTopBar(
                 Column {
                     Text(
                         text = title,
-                        color = Color.White,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp
+                        fontSize = 19.sp
                     )
                     if (!subtitle.isNullOrBlank()) {
                         Text(
                             text = subtitle,
-                            color = PfcSlateLight,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 12.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -101,7 +102,7 @@ fun PfcTopBar(
                 Box(
                     modifier = Modifier
                         .size(44.dp)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(CircleShape)
                         .clickable { onNotifClick() }
                         .testTag("notif_button"),
                     contentAlignment = Alignment.Center
@@ -109,7 +110,7 @@ fun PfcTopBar(
                     Icon(
                         imageVector = if (unreadNotifCount > 0) Icons.Filled.Notifications else Icons.Outlined.Notifications,
                         contentDescription = "Notifiche",
-                        tint = if (unreadNotifCount > 0) PfcAmber else Color.White,
+                        tint = if (unreadNotifCount > 0) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(24.dp)
                     )
 
@@ -138,7 +139,7 @@ fun PfcTopBar(
                     modifier = Modifier
                         .size(40.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.15f))
+                        .background(GeoPrimary)
                         .clickable { onProfileClick() }
                         .testTag("profile_avatar_button"),
                     contentAlignment = Alignment.Center
@@ -162,25 +163,25 @@ fun StatusBadge(
 ) {
     val (bgColor, textColor, label) = when (status.lowercase()) {
         "nuovo" -> Triple(PfcSuccessSoft, PfcSuccess, "Nuovo")
-        "preferito" -> Triple(PfcAmberSoft, PfcAmberDark, "Preferito")
-        "scaricato" -> Triple(PfcInfoSoft, PfcInfo, "Scaricato")
-        "richiede_upload" -> Triple(PfcPurpleSoft, PfcPurple, "Richiede Upload")
+        "preferito" -> Triple(GeoPrimaryContainer, GeoOnPrimaryContainer, "★ Preferito")
+        "scaricato" -> Triple(GeoSecondaryContainer, GeoPrimary, "Scaricato")
+        "richiede_upload" -> Triple(GeoPrimaryContainer, GeoOnPrimaryContainer, "Richiede Upload")
         "risposto" -> Triple(PfcSuccessSoft, PfcSuccess, "✓ Risposto")
         "scadenza" -> Triple(PfcDangerSoft, PfcDanger, "In Scadenza")
-        else -> Triple(PfcSurfaceAltLight, PfcSlate, status)
+        else -> Triple(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, status)
     }
 
     Surface(
         modifier = modifier,
         color = bgColor,
-        shape = RoundedCornerShape(6.dp)
+        shape = RoundedCornerShape(8.dp)
     ) {
         Text(
             text = label,
             color = textColor,
             fontSize = 11.sp,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
 }
@@ -191,25 +192,25 @@ fun CategoryPill(
     modifier: Modifier = Modifier
 ) {
     val (bgColor, textColor) = when {
-        category.contains("QR", ignoreCase = true) -> Pair(PfcInfoSoft, PfcInfo)
-        category.contains("Certificato", ignoreCase = true) -> Pair(PfcAmberSoft, PfcAmberDark)
-        category.contains("Visura", ignoreCase = true) -> Pair(PfcPurpleSoft, PfcPurple)
+        category.contains("QR", ignoreCase = true) -> Pair(GeoPrimaryContainer, GeoOnPrimaryContainer)
+        category.contains("Certificato", ignoreCase = true) -> Pair(GeoSecondaryContainer, GeoOnPrimaryContainer)
+        category.contains("Visura", ignoreCase = true) -> Pair(GeoAccentLavender.copy(alpha = 0.5f), GeoOnPrimaryContainer)
         category.contains("Identit", ignoreCase = true) -> Pair(PfcSuccessSoft, PfcSuccess)
-        category.contains("IBAN", ignoreCase = true) -> Pair(Color(0xFFCCFBF1), Color(0xFF0F766E))
-        else -> Pair(PfcSurfaceAltLight, PfcSlate)
+        category.contains("IBAN", ignoreCase = true) -> Pair(Color(0xFFE8DEF8), Color(0xFF1D192B))
+        else -> Pair(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
     }
 
     Surface(
         modifier = modifier,
         color = bgColor,
-        shape = RoundedCornerShape(8.dp)
+        shape = RoundedCornerShape(10.dp)
     ) {
         Text(
             text = category,
             color = textColor,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
         )
     }
 }
@@ -221,18 +222,18 @@ fun FileFormatIcon(
 ) {
     val ext = fileName.substringAfterLast('.', "").lowercase()
     val (bgColor, iconVector, badgeText) = when (ext) {
-        "pdf" -> Triple(Color(0xFFFEE2E2), Icons.Filled.PictureAsPdf, "PDF")
-        "xml", "p7m" -> Triple(Color(0xFFE0E7FF), Icons.Filled.Code, "XML")
-        "zip", "rar" -> Triple(Color(0xFFFEF3C7), Icons.Filled.FolderZip, "ZIP")
-        "png", "jpg", "jpeg" -> Triple(Color(0xFFD1FAE5), Icons.Filled.Image, "IMG")
-        "doc", "docx", "xls", "xlsx" -> Triple(Color(0xFFDBEAFE), Icons.Filled.Description, "DOC")
-        else -> Triple(PfcSurfaceAltLight, Icons.Filled.InsertDriveFile, "FILE")
+        "pdf" -> Triple(Color(0xFFF9DEDC), Icons.Filled.PictureAsPdf, "PDF")
+        "xml", "p7m" -> Triple(Color(0xFFEADDFF), Icons.Filled.Code, "XML")
+        "zip", "rar" -> Triple(Color(0xFFFFD8E4), Icons.Filled.FolderZip, "ZIP")
+        "png", "jpg", "jpeg" -> Triple(Color(0xFFE8F5E9), Icons.Filled.Image, "IMG")
+        "doc", "docx", "xls", "xlsx" -> Triple(Color(0xFFE8DEF8), Icons.Filled.Description, "DOC")
+        else -> Triple(Color(0xFFF3EDF7), Icons.Filled.InsertDriveFile, "FILE")
     }
 
     Box(
         modifier = modifier
             .size(44.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(bgColor),
         contentAlignment = Alignment.Center
     ) {
@@ -241,11 +242,11 @@ fun FileFormatIcon(
             contentDescription = badgeText,
             tint = when (badgeText) {
                 "PDF" -> PfcDanger
-                "XML" -> Color(0xFF4F46E5)
-                "ZIP" -> PfcWarning
+                "XML" -> GeoOnPrimaryContainer
+                "ZIP" -> GeoTertiary
                 "IMG" -> PfcSuccess
-                "DOC" -> PfcInfo
-                else -> PfcSlate
+                "DOC" -> GeoPrimary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
             },
             modifier = Modifier.size(24.dp)
         )
@@ -271,14 +272,14 @@ fun EmptyStateView(
         Box(
             modifier = Modifier
                 .size(72.dp)
-                .clip(CircleShape)
-                .background(PfcSurfaceAltLight),
+                .clip(RoundedCornerShape(20.dp))
+                .background(GeoPrimaryContainer),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = PfcSlateLight,
+                tint = GeoOnPrimaryContainer,
                 modifier = Modifier.size(36.dp)
             )
         }
@@ -298,7 +299,7 @@ fun EmptyStateView(
             Text(
                 text = description,
                 style = MaterialTheme.typography.bodyMedium,
-                color = PfcSlate,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
@@ -308,8 +309,8 @@ fun EmptyStateView(
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = onActionClick,
-                colors = ButtonDefaults.buttonColors(containerColor = PfcAmber),
-                shape = RoundedCornerShape(10.dp)
+                colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
+                shape = RoundedCornerShape(50)
             ) {
                 Text(actionLabel, color = Color.White, fontWeight = FontWeight.Bold)
             }
@@ -337,7 +338,8 @@ fun ShimmerItem(
         modifier = modifier
             .fillMaxWidth()
             .height(height.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(PfcSlateLight.copy(alpha = alpha))
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = alpha))
     )
 }
+

@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,7 +16,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -35,7 +35,7 @@ fun AttivitaScreen(
         // Header
         Surface(
             color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 2.dp
+            tonalElevation = 1.dp
         ) {
             Column(
                 modifier = Modifier
@@ -45,7 +45,7 @@ fun AttivitaScreen(
                 Text(
                     text = "REGISTRO ATTIVITÀ & AUDIT",
                     style = MaterialTheme.typography.labelSmall,
-                    color = PfcSlateLight,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.8.sp
                 )
@@ -59,7 +59,7 @@ fun AttivitaScreen(
                 Text(
                     text = "Tutte le consultazioni, download e accessi registrati sul portale.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = PfcSlate
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -74,7 +74,7 @@ fun AttivitaScreen(
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(auditLogs, key = { it.id }) { log ->
                     AuditLogRow(log = log)
@@ -88,32 +88,32 @@ fun AttivitaScreen(
 fun AuditLogRow(log: CachedAuditEntity) {
     val (icon, bgColor, tintColor, label) = when (log.action.lowercase()) {
         "login" -> Quadruple(Icons.Filled.Login, PfcSuccessSoft, PfcSuccess, "Accesso")
-        "logout" -> Quadruple(Icons.Filled.Logout, PfcSlateLight.copy(alpha = 0.3f), PfcSlate, "Disconnessione")
-        "download", "download_batch" -> Quadruple(Icons.Filled.Download, PfcInfoSoft, PfcInfo, "Download")
+        "logout" -> Quadruple(Icons.Filled.Logout, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, "Disconnessione")
+        "download", "download_batch" -> Quadruple(Icons.Filled.Download, GeoPrimaryContainer, GeoOnPrimaryContainer, "Download")
         "preview" -> Quadruple(Icons.Filled.Visibility, PfcAmberSoft, PfcAmberDark, "Anteprima")
         "preferito" -> Quadruple(Icons.Filled.Star, PfcWarningSoft, PfcWarning, "Preferiti")
-        "upload", "cassetto_add" -> Quadruple(Icons.Filled.CloudUpload, PfcPurpleSoft, PfcPurple, "Caricamento")
+        "upload", "cassetto_add" -> Quadruple(Icons.Filled.CloudUpload, GeoPrimaryContainer, GeoOnPrimaryContainer, "Caricamento")
         "cassetto_delete" -> Quadruple(Icons.Filled.Delete, PfcDangerSoft, PfcDanger, "Eliminazione")
-        "cassetto_rename" -> Quadruple(Icons.Filled.Edit, PfcInfoSoft, PfcInfo, "Rinomina")
-        else -> Quadruple(Icons.Filled.Info, PfcSurfaceAltLight, PfcSlate, log.action)
+        "cassetto_rename" -> Quadruple(Icons.Filled.Edit, GeoPrimaryContainer, GeoOnPrimaryContainer, "Rinomina")
+        else -> Quadruple(Icons.Filled.Info, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant, log.action)
     }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(42.dp)
                     .clip(CircleShape)
                     .background(bgColor),
                 contentAlignment = Alignment.Center
@@ -134,25 +134,25 @@ fun AuditLogRow(log: CachedAuditEntity) {
                 ) {
                     Surface(
                         color = bgColor,
-                        shape = RoundedCornerShape(4.dp)
+                        shape = RoundedCornerShape(50)
                     ) {
                         Text(
                             text = label,
                             color = tintColor,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
 
                     Text(
                         text = log.ts,
                         fontSize = 11.sp,
-                        color = PfcSlate
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
                     text = log.detail,
@@ -166,3 +166,4 @@ fun AuditLogRow(log: CachedAuditEntity) {
 }
 
 private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+

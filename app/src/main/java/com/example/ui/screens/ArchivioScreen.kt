@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -64,44 +65,46 @@ fun ArchivioScreen(
         // Search & Filter Bar
         Surface(
             color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 2.dp
+            tonalElevation = 1.dp
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp)
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
                 // Search Input Field
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = onSearchChange,
-                    placeholder = { Text("Cerca in tutti i documenti...") },
+                    placeholder = { Text("Cerca in tutti i documenti...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.Search,
                             contentDescription = "Cerca",
-                            tint = PfcSlate
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
                             IconButton(onClick = { onSearchChange("") }) {
-                                Icon(Icons.Filled.Clear, contentDescription = "Pulisci")
+                                Icon(Icons.Filled.Clear, contentDescription = "Pulisci", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("search_document_input"),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PfcAmber,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                        focusedBorderColor = GeoPrimary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
                     )
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Year Selector Chips + Favorites Filter
                 Row(
@@ -118,6 +121,7 @@ fun ArchivioScreen(
                             FilterChip(
                                 selected = isSelected,
                                 onClick = { onSelectYear(yr) },
+                                shape = RoundedCornerShape(50),
                                 label = {
                                     Text(
                                         text = yr,
@@ -125,9 +129,12 @@ fun ArchivioScreen(
                                     )
                                 },
                                 colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = PfcAmber,
-                                    selectedLabelColor = Color.White
-                                )
+                                    selectedContainerColor = GeoPrimary,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                border = null
                             )
                         }
                     }
@@ -138,14 +145,14 @@ fun ArchivioScreen(
                     IconButton(
                         onClick = onToggleFilterFavorites,
                         modifier = Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(if (filterFavoritesOnly) PfcAmberSoft else MaterialTheme.colorScheme.surfaceVariant)
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (filterFavoritesOnly) GeoPrimaryContainer else MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Icon(
                             imageVector = if (filterFavoritesOnly) Icons.Filled.Star else Icons.Outlined.StarBorder,
                             contentDescription = "Filtra preferiti",
-                            tint = if (filterFavoritesOnly) PfcAmber else PfcSlate,
+                            tint = if (filterFavoritesOnly) GeoOnPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -160,7 +167,7 @@ fun ArchivioScreen(
             exit = shrinkVertically() + fadeOut()
         ) {
             Surface(
-                color = PfcNavyMid,
+                color = GeoPrimary,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -189,17 +196,17 @@ fun ArchivioScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         TextButton(onClick = onSelectAllBatch) {
-                            Text("Tutti", color = PfcAmber, fontWeight = FontWeight.Bold)
+                            Text("Tutti", color = GeoAccentLavender, fontWeight = FontWeight.Bold)
                         }
                         Button(
                             onClick = onDownloadBatch,
-                            colors = ButtonDefaults.buttonColors(containerColor = PfcAmber),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(50),
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                         ) {
-                            Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.Download, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Scarica", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Scarica", color = GeoPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }
@@ -220,14 +227,15 @@ fun ArchivioScreen(
                     } else {
                         LazyColumn(
                             contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             item {
                                 Text(
                                     text = "${searchResults.size} RISULTATI TROVATI",
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = PfcSlateLight,
-                                    fontWeight = FontWeight.Bold
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp
                                 )
                             }
                             items(searchResults) { result ->
@@ -276,17 +284,17 @@ fun ArchivioScreen(
                                 Icon(
                                     imageVector = Icons.Filled.ArrowBack,
                                     contentDescription = "Indietro",
-                                    tint = PfcAmber,
+                                    tint = GeoPrimary,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Text(
                                     text = "Archivio $selectedYear",
-                                    color = PfcSlate,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 13.sp
                                 )
                                 Text(
                                     text = "•",
-                                    color = PfcSlateLight
+                                    color = MaterialTheme.colorScheme.outline
                                 )
                                 Text(
                                     text = selectedCartella.nome,
@@ -300,9 +308,9 @@ fun ArchivioScreen(
                         if (filesLoading) {
                             Column(
                                 modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                repeat(5) { ShimmerItem(height = 70) }
+                                repeat(5) { ShimmerItem(height = 76) }
                             }
                         } else if (displayedFiles.isEmpty()) {
                             EmptyStateView(
@@ -313,7 +321,7 @@ fun ArchivioScreen(
                         } else {
                             LazyColumn(
                                 contentPadding = PaddingValues(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
                                 items(displayedFiles) { file ->
                                     val isSelected = selectedBatchKeys.contains(file.key)
@@ -332,7 +340,7 @@ fun ArchivioScreen(
                     }
                 }
 
-                // 3. Root View: Folders List
+                // 3. Root View: Folders List with Geometric Hero Card
                 else -> {
                     if (cartelle.isEmpty()) {
                         EmptyStateView(
@@ -343,8 +351,83 @@ fun ArchivioScreen(
                     } else {
                         LazyColumn(
                             contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
+                            // Geometric Hero Banner
+                            item {
+                                Surface(
+                                    color = GeoPrimaryContainer,
+                                    shape = RoundedCornerShape(28.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(20.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Column {
+                                            Text(
+                                                text = "ANNO FISCALE $selectedYear",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = GeoOnPrimaryContainer,
+                                                fontWeight = FontWeight.Bold,
+                                                letterSpacing = 0.8.sp
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = "Archivio Documenti Studio",
+                                                style = MaterialTheme.typography.titleLarge,
+                                                color = GeoOnPrimaryContainer,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "Consulta F24, dichiarazioni e bilanci con protocolli telematici verificati.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = GeoOnPrimaryContainer.copy(alpha = 0.85f),
+                                                modifier = Modifier.padding(top = 2.dp)
+                                            )
+                                        }
+
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                color = GeoPrimary,
+                                                shape = RoundedCornerShape(50),
+                                                modifier = Modifier.clickable {
+                                                    if (cartelle.isNotEmpty()) onSelectCartella(cartelle.first())
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = "Esplora sezioni",
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 12.sp,
+                                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                                                )
+                                            }
+
+                                            Surface(
+                                                color = Color.Transparent,
+                                                shape = RoundedCornerShape(50),
+                                                border = BorderStroke(1.dp, GeoBorderStrongLight),
+                                                modifier = Modifier.clickable { onToggleFilterFavorites() }
+                                            ) {
+                                                Text(
+                                                    text = if (filterFavoritesOnly) "Mostra tutti" else "Solo preferiti",
+                                                    color = GeoOnPrimaryContainer,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 12.sp,
+                                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
                             item {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -352,16 +435,16 @@ fun ArchivioScreen(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "CARTELLE FISCALI $selectedYear",
+                                        text = "CARTELLE FISCALI",
                                         style = MaterialTheme.typography.labelSmall,
-                                        color = PfcSlateLight,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontWeight = FontWeight.Bold,
                                         letterSpacing = 0.8.sp
                                     )
                                     Text(
                                         text = "${cartelle.size} sezioni",
                                         fontSize = 12.sp,
-                                        color = PfcSlate
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -390,9 +473,9 @@ fun CartellaCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("folder_card_${cartella.nome}"),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
             modifier = Modifier
@@ -409,14 +492,14 @@ fun CartellaCard(
                 Box(
                     modifier = Modifier
                         .size(46.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(PfcAmberSoft),
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(GeoAccentLavender),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Folder,
                         contentDescription = null,
-                        tint = PfcAmberDark,
+                        tint = GeoOnPrimaryContainer,
                         modifier = Modifier.size(26.dp)
                     )
                 }
@@ -434,12 +517,12 @@ fun CartellaCard(
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.padding(top = 2.dp)
+                        modifier = Modifier.padding(top = 3.dp)
                     ) {
                         Text(
                             text = "${cartella.count ?: 0} documenti",
                             style = MaterialTheme.typography.bodySmall,
-                            color = PfcSlate
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         if ((cartella.nuovi ?: 0) > 0) {
@@ -456,7 +539,7 @@ fun CartellaCard(
             Icon(
                 imageVector = Icons.Filled.ChevronRight,
                 contentDescription = null,
-                tint = PfcSlateLight,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp)
             )
         }
@@ -476,20 +559,23 @@ fun DocumentFileRow(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(18.dp))
             .clickable {
                 if (isBatchMode) onToggleBatch() else onFileClick()
             },
         colors = CardDefaults.cardColors(
-            containerColor = if (isBatchSelected) PfcAmberSoft else MaterialTheme.colorScheme.surface
+            containerColor = if (isBatchSelected) GeoSecondaryContainer else MaterialTheme.colorScheme.surfaceVariant
         ),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(
+            width = 1.dp,
+            color = if (isBatchSelected) GeoPrimary else MaterialTheme.colorScheme.outlineVariant
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -502,7 +588,7 @@ fun DocumentFileRow(
                     Checkbox(
                         checked = isBatchSelected,
                         onCheckedChange = { onToggleBatch() },
-                        colors = CheckboxDefaults.colors(checkedColor = PfcAmber)
+                        colors = CheckboxDefaults.colors(checkedColor = GeoPrimary)
                     )
                 } else {
                     FileFormatIcon(fileName = file.nome)
@@ -542,7 +628,7 @@ fun DocumentFileRow(
                             Text(
                                 text = file.sizeStr,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = PfcSlate
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
@@ -550,7 +636,7 @@ fun DocumentFileRow(
                             Text(
                                 text = "•  ${file.lastModified}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = PfcSlate
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
 
@@ -558,7 +644,7 @@ fun DocumentFileRow(
                             Text(
                                 text = "•  ${file.cartella}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = PfcAmberDark,
+                                color = GeoPrimary,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -579,7 +665,7 @@ fun DocumentFileRow(
                     Icon(
                         imageVector = if (file.isPreferito) Icons.Filled.Star else Icons.Outlined.StarBorder,
                         contentDescription = "Preferito",
-                        tint = if (file.isPreferito) PfcAmber else PfcSlateLight,
+                        tint = if (file.isPreferito) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
                 }
@@ -591,7 +677,7 @@ fun DocumentFileRow(
                     Icon(
                         imageVector = Icons.Outlined.Download,
                         contentDescription = "Scarica",
-                        tint = PfcSlate,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(20.dp)
                     )
                 }

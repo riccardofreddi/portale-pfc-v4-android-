@@ -108,12 +108,20 @@ fun MainAppContent(viewModel: PfcViewModel) {
                     val unreadMsgCount = attiviList.count { !it.letto }
 
                     NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 6.dp,
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 2.dp,
                         modifier = Modifier
                             .windowInsetsPadding(WindowInsets.navigationBars)
                             .testTag("bottom_nav_bar")
                     ) {
+                        val navItemColors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onSurface,
+                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                            indicatorColor = GeoSecondaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
                         // 0: Archivio
                         NavigationBarItem(
                             selected = selectedTab == 0,
@@ -131,11 +139,7 @@ fun MainAppContent(viewModel: PfcViewModel) {
                                     fontSize = 11.sp
                                 )
                             },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = PfcAmber,
-                                selectedTextColor = PfcAmber,
-                                indicatorColor = PfcAmberSoft
-                            )
+                            colors = navItemColors
                         )
 
                         // 1: Messaggi
@@ -175,11 +179,7 @@ fun MainAppContent(viewModel: PfcViewModel) {
                                     fontSize = 11.sp
                                 )
                             },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = PfcAmber,
-                                selectedTextColor = PfcAmber,
-                                indicatorColor = PfcAmberSoft
-                            )
+                            colors = navItemColors
                         )
 
                         // 2: Cassetto
@@ -199,11 +199,7 @@ fun MainAppContent(viewModel: PfcViewModel) {
                                     fontSize = 11.sp
                                 )
                             },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = PfcAmber,
-                                selectedTextColor = PfcAmber,
-                                indicatorColor = PfcAmberSoft
-                            )
+                            colors = navItemColors
                         )
 
                         // 3: Attività
@@ -223,11 +219,7 @@ fun MainAppContent(viewModel: PfcViewModel) {
                                     fontSize = 11.sp
                                 )
                             },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = PfcAmber,
-                                selectedTextColor = PfcAmber,
-                                indicatorColor = PfcAmberSoft
-                            )
+                            colors = navItemColors
                         )
                     }
                 },

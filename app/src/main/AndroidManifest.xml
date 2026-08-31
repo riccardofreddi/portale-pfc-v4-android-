@@ -40,6 +40,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Disable automatic Firebase Messaging init to avoid logcat errors on emulators without Play Services -->
+        <meta-data
+            android:name="firebase_messaging_auto_init_enabled"
+            android:value="false" />
+
         <!-- Firebase Cloud Messaging Service -->
         <service
             android:name=".notification.PfcFirebaseMessagingService"

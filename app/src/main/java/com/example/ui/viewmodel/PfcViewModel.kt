@@ -155,15 +155,19 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         if (ReminderScheduler.isRemindersEnabled(application)) {
             ReminderScheduler.scheduleReminders(application)
         }
-        try {
-            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
-                if (task.isSuccessful && task.result != null) {
-                    val token = task.result
-                    android.util.Log.d("PfcViewModel", "FCM Device Token: $token")
-                }
+        // Initialize FCM registration token asynchronously in background without blocking UI
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                FirebaseMessaging.getInstance().token
+                    .addOnSuccessListener { token ->
+                        android.util.Log.d("PfcViewModel", "FCM Device Token: $token")
+                    }
+                    .addOnFailureListener { e ->
+                        android.util.Log.i("PfcViewModel", "Firebase push not active on current device/emulator, local reminders active: ${e.message}")
+                    }
+            } catch (e: Throwable) {
+                android.util.Log.i("PfcViewModel", "Firebase messaging init skipped: ${e.message}")
             }
-        } catch (e: Exception) {
-            android.util.Log.e("PfcViewModel", "Error fetching FCM token", e)
         }
         if (_isLoggedIn.value) {
             refreshArchivio()

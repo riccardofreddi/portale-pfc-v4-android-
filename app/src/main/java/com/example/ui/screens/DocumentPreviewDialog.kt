@@ -147,34 +147,36 @@ fun DocumentPreviewDialog(
                                 }
                             }
 
+                            // Share official PDF
                             IconButton(
                                 onClick = {
-                                    val sendIntent = Intent().apply {
-                                        action = Intent.ACTION_SEND
-                                        putExtra(Intent.EXTRA_SUBJECT, file.nome)
-                                        putExtra(Intent.EXTRA_TEXT, "Documento fiscale da Portale PFC: ${file.nome} (${file.anno ?: "2025"} - ${file.cartella ?: "Fiscale"})")
-                                        type = "text/plain"
-                                    }
-                                    val shareIntent = Intent.createChooser(sendIntent, "Condividi Documento")
-                                    context.startActivity(shareIntent)
+                                    com.example.util.PdfGeneratorHelper.shareDocument(context, file)
                                 }
                             ) {
                                 Icon(
                                     imageVector = Icons.Outlined.Share,
-                                    contentDescription = "Condividi",
+                                    contentDescription = "Condividi PDF",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
+                            // Download / Save PDF locally
                             Button(
-                                onClick = onDownload,
+                                onClick = {
+                                    val saved = com.example.util.PdfGeneratorHelper.savePdfLocally(context, file)
+                                    if (saved != null) {
+                                        onDownload()
+                                    } else {
+                                        android.widget.Toast.makeText(context, "Errore salvataggio PDF", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
                                 colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
                                 shape = RoundedCornerShape(50),
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                             ) {
                                 Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Scarica", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("Salva PDF", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     }

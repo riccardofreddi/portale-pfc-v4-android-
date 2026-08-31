@@ -1,11 +1,11 @@
 package com.example.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -64,30 +64,30 @@ fun LoginScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 // Hero Studio Monogram Badge
                 Box(
                     modifier = Modifier
-                        .size(88.dp)
-                        .clip(RoundedCornerShape(24.dp))
+                        .size(80.dp)
+                        .clip(RoundedCornerShape(22.dp))
                         .background(
                             Brush.linearGradient(
-                                listOf(GeoPrimary, GeoOnPrimaryContainer)
+                                listOf(PfcNavyDark, PfcNavyMid)
                             )
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = "PF",
-                        color = Color.White,
-                        fontSize = 38.sp,
+                        color = PfcAmber,
+                        fontSize = 36.sp,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 1.sp
                     )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 Text(
                     text = "Portale PFC",
@@ -101,7 +101,7 @@ fun LoginScreen(
                 Text(
                     text = "Area riservata clienti e gestione documentale",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = PfcSlate,
                     textAlign = TextAlign.Center
                 )
 
@@ -114,10 +114,10 @@ fun LoginScreen(
                             .fillMaxWidth()
                             .padding(bottom = 16.dp),
                         colors = CardDefaults.cardColors(containerColor = PfcDangerSoft),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(10.dp)
                     ) {
                         Row(
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
@@ -145,27 +145,21 @@ fun LoginScreen(
                         Icon(
                             imageVector = Icons.Outlined.Person,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = PfcSlate
                         )
                     },
                     trailingIcon = {
                         if (username.isNotEmpty()) {
                             IconButton(onClick = { username = "" }) {
-                                Icon(Icons.Filled.Clear, contentDescription = "Cancella", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Icon(Icons.Filled.Clear, contentDescription = "Cancella")
                             }
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("username_input"),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(12.dp),
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = GeoPrimary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Next
@@ -183,15 +177,14 @@ fun LoginScreen(
                         Icon(
                             imageVector = Icons.Outlined.Lock,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            tint = PfcSlate
                         )
                     },
                     trailingIcon = {
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
                             Icon(
                                 imageVector = if (passwordVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                contentDescription = "Mostra password",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                contentDescription = "Mostra password"
                             )
                         }
                     },
@@ -199,14 +192,8 @@ fun LoginScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("password_input"),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(12.dp),
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = GeoPrimary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
                     keyboardOptions = KeyboardOptions(
                         keyboardType = KeyboardType.Password,
                         imeAction = ImeAction.Done
@@ -231,10 +218,10 @@ fun LoginScreen(
                         .height(54.dp)
                         .testTag("login_button"),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GeoPrimary,
-                        disabledContainerColor = GeoPrimary.copy(alpha = 0.4f)
+                        containerColor = PfcAmber,
+                        disabledContainerColor = PfcAmber.copy(alpha = 0.5f)
                     ),
-                    shape = RoundedCornerShape(50)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     if (loading) {
                         CircularProgressIndicator(
@@ -252,13 +239,13 @@ fun LoginScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(30.dp))
+                Spacer(modifier = Modifier.height(28.dp))
 
-                // Quick Demo Accounts Selector
+                // Quick Demo Accounts Selector (Helps immediate validation & testing)
                 Text(
                     text = "OPPURE PROVA UN ACCOUNT DIMOSTRATIVO",
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = PfcSlateLight,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.8.sp
                 )
@@ -276,20 +263,19 @@ fun LoginScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(10.dp))
                             .clickable {
                                 username = usr
                                 password = pwd
                                 onLogin(usr, pwd)
                             },
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(16.dp),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        shape = RoundedCornerShape(10.dp)
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -303,13 +289,13 @@ fun LoginScreen(
                                 Text(
                                     text = "Username: @$usr",
                                     fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = PfcSlate
                                 )
                             }
                             Icon(
                                 imageVector = Icons.Filled.ArrowForwardIos,
                                 contentDescription = null,
-                                tint = GeoPrimary,
+                                tint = PfcAmber,
                                 modifier = Modifier.size(14.dp)
                             )
                         }
@@ -327,11 +313,10 @@ fun LoginScreen(
                 Text(
                     text = "Studio PFC • Piattaforma Fiscale Clienti v2.0",
                     fontSize = 11.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = PfcSlateLight,
                     textAlign = TextAlign.Center
                 )
             }
         }
     }
 }
-

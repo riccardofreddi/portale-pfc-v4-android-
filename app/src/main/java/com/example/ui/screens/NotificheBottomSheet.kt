@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -63,7 +62,7 @@ fun NotificheBottomSheet(
                     Icon(
                         imageVector = Icons.Filled.Notifications,
                         contentDescription = null,
-                        tint = GeoPrimary
+                        tint = PfcAmber
                     )
                     Text(
                         text = "Notifiche",
@@ -76,7 +75,7 @@ fun NotificheBottomSheet(
                 if (unreadCount > 0) {
                     TextButton(
                         onClick = onMarkAllAsRead,
-                        colors = ButtonDefaults.textButtonColors(contentColor = GeoPrimary),
+                        colors = ButtonDefaults.textButtonColors(contentColor = PfcAmber),
                         modifier = Modifier.testTag("mark_all_read_button")
                     ) {
                         Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -86,7 +85,7 @@ fun NotificheBottomSheet(
                 }
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
 
             if (notifiche.isEmpty()) {
                 EmptyStateView(
@@ -133,39 +132,36 @@ fun NotificaItemRow(
 ) {
     val (icon, bgColor, tintColor) = when (notif.tipo.lowercase()) {
         "documento_nuovo" -> Triple(Icons.Filled.Description, PfcSuccessSoft, PfcSuccess)
-        "messaggio" -> Triple(Icons.Filled.Chat, GeoPrimaryContainer, GeoOnPrimaryContainer)
+        "messaggio" -> Triple(Icons.Filled.Chat, PfcInfoSoft, PfcInfo)
         "avviso" -> Triple(Icons.Filled.Warning, PfcWarningSoft, PfcWarning)
-        "richiesta_upload" -> Triple(Icons.Filled.UploadFile, GeoPrimaryContainer, GeoOnPrimaryContainer)
+        "richiesta_upload" -> Triple(Icons.Filled.UploadFile, PfcPurpleSoft, PfcPurple)
         "scadenza" -> Triple(Icons.Filled.Schedule, PfcDangerSoft, PfcDanger)
         "upload_confermato" -> Triple(Icons.Filled.CheckCircle, PfcSuccessSoft, PfcSuccess)
-        else -> Triple(Icons.Filled.Notifications, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
+        else -> Triple(Icons.Filled.Notifications, PfcSurfaceAltLight, PfcSlate)
     }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(12.dp))
             .clickable { if (!notif.letta) onMarkAsRead() },
         colors = CardDefaults.cardColors(
-            containerColor = if (!notif.letta) GeoPrimaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (!notif.letta) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant
         ),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(
-            1.dp,
-            if (!notif.letta) GeoPrimary else MaterialTheme.colorScheme.outlineVariant
-        )
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (!notif.letta) 2.dp else 0.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(12.dp),
             verticalAlignment = Alignment.Top,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(8.dp))
                     .background(bgColor),
                 contentAlignment = Alignment.Center
             ) {
@@ -193,7 +189,7 @@ fun NotificaItemRow(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(GeoPrimary)
+                                    .background(PfcAmber)
                             )
                         }
                         Text(
@@ -207,7 +203,7 @@ fun NotificaItemRow(
                     Text(
                         text = notif.dataCreazione,
                         fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = PfcSlate
                     )
                 }
 
@@ -230,7 +226,7 @@ fun NotificaItemRow(
                     Icon(
                         imageVector = Icons.Filled.Check,
                         contentDescription = "Segna come letta",
-                        tint = GeoPrimary,
+                        tint = PfcAmber,
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -238,4 +234,3 @@ fun NotificaItemRow(
         }
     }
 }
-

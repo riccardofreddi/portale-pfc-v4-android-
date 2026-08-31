@@ -1,19 +1,13 @@
 package com.example
 
-import android.Manifest
-import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -28,58 +22,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.notification.LocalNotificationHelper
 import com.example.ui.components.PfcTopBar
 import com.example.ui.screens.*
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.PfcViewModel
 
 class MainActivity : ComponentActivity() {
-
-    private var pfcViewModel: PfcViewModel? = null
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             val viewModel: PfcViewModel = viewModel()
-            pfcViewModel = viewModel
             val isDarkMode by viewModel.isDarkMode.collectAsState()
 
             MyApplicationTheme(darkTheme = isDarkMode) {
-                MainAppContent(viewModel = viewModel, onActivityIntent = { processIntent(intent, viewModel) })
+                MainAppContent(viewModel = viewModel)
             }
-        }
-        processIntent(intent, null)
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        pfcViewModel?.let { processIntent(intent, it) }
-    }
-
-    private fun processIntent(intent: Intent?, vm: PfcViewModel?) {
-        if (intent == null || vm == null) return
-
-        val targetTab = if (intent.hasExtra(LocalNotificationHelper.EXTRA_TARGET_TAB)) {
-            intent.getIntExtra(LocalNotificationHelper.EXTRA_TARGET_TAB, 0)
-        } else null
-
-        val year = intent.getStringExtra(LocalNotificationHelper.EXTRA_YEAR)
-        val folder = intent.getStringExtra(LocalNotificationHelper.EXTRA_FOLDER)
-        val docKey = intent.getStringExtra(LocalNotificationHelper.EXTRA_DOC_KEY)
-        val msgId = intent.getStringExtra(LocalNotificationHelper.EXTRA_MSG_ID)
-        val showNotifSheet = intent.getBooleanExtra(LocalNotificationHelper.EXTRA_SHOW_NOTIF_SHEET, false)
-
-        if (targetTab != null || showNotifSheet || msgId != null || folder != null) {
-            vm.handleNotificationIntent(targetTab, year, folder, docKey, msgId, showNotifSheet)
         }
     }
 }
 
 @Composable
-fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
+fun MainAppContent(viewModel: PfcViewModel) {
     val onboardingDone by viewModel.onboardingDone.collectAsState()
     val isLoggedIn by viewModel.isLoggedIn.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
@@ -99,31 +63,7 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
     val fcmStatus by viewModel.fcmStatus.collectAsState()
     val fcmTesting by viewModel.fcmTesting.collectAsState()
 
-    // Notification Reminder Settings
-    val isRemindersEnabled by viewModel.isRemindersEnabled.collectAsState()
-    val isRemindDocumentsEnabled by viewModel.isRemindDocumentsEnabled.collectAsState()
-    val isRemindMessagesEnabled by viewModel.isRemindMessagesEnabled.collectAsState()
-    val isRemindDeadlinesEnabled by viewModel.isRemindDeadlinesEnabled.collectAsState()
-    val reminderIntervalMin by viewModel.reminderIntervalMin.collectAsState()
-    val hasNotificationPermission by viewModel.hasNotificationPermission.collectAsState()
-
     val snackbarHostState = remember { SnackbarHostState() }
-
-    // Runtime Permission Launcher for Android 13+
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { _ ->
-        viewModel.updateNotificationPermissionStatus()
-    }
-
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (!hasNotificationPermission) {
-                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-        onActivityIntent()
-    }
 
     LaunchedEffect(snackbarMessage) {
         snackbarMessage?.let { msg ->
@@ -158,7 +98,7 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                         title = "Portale PFC",
                         subtitle = subtitle,
                         unreadNotifCount = unreadNotifCount,
-                        userInitials = (currentUser?.name ?: "PF").take(2).uppercase(),
+                        userInitials = currentUser?.name ?: "PF",
                         onNotifClick = { viewModel.setShowNotifSheet(true) },
                         onProfileClick = { viewModel.setShowSettingsSheet(true) }
                     )
@@ -168,20 +108,12 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                     val unreadMsgCount = attiviList.count { !it.letto }
 
                     NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        tonalElevation = 2.dp,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 6.dp,
                         modifier = Modifier
                             .windowInsetsPadding(WindowInsets.navigationBars)
                             .testTag("bottom_nav_bar")
                     ) {
-                        val navItemColors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                            indicatorColor = GeoSecondaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-
                         // 0: Archivio
                         NavigationBarItem(
                             selected = selectedTab == 0,
@@ -199,7 +131,11 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     fontSize = 11.sp
                                 )
                             },
-                            colors = navItemColors
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PfcAmber,
+                                selectedTextColor = PfcAmber,
+                                indicatorColor = PfcAmberSoft
+                            )
                         )
 
                         // 1: Messaggi
@@ -207,20 +143,29 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                             selected = selectedTab == 1,
                             onClick = { viewModel.setTab(1) },
                             icon = {
-                                BadgedBox(badge = {
-                                    if (unreadMsgCount > 0) {
-                                        Badge(
-                                            containerColor = GeoPrimary,
-                                            contentColor = Color.White
-                                        ) {
-                                            Text(unreadMsgCount.toString(), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }) {
+                                Box {
                                     Icon(
-                                        imageVector = if (selectedTab == 1) Icons.Filled.Chat else Icons.Outlined.Chat,
+                                        imageVector = if (selectedTab == 1) Icons.Filled.Chat else Icons.Outlined.ChatBubbleOutline,
                                         contentDescription = "Messaggi"
                                     )
+                                    if (unreadMsgCount > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.TopEnd)
+                                                .offset(x = 4.dp, y = (-2).dp)
+                                                .size(14.dp)
+                                                .clip(CircleShape)
+                                                .background(PfcDanger),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = unreadMsgCount.toString(),
+                                                color = Color.White,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
                                 }
                             },
                             label = {
@@ -230,7 +175,11 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     fontSize = 11.sp
                                 )
                             },
-                            colors = navItemColors
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PfcAmber,
+                                selectedTextColor = PfcAmber,
+                                indicatorColor = PfcAmberSoft
+                            )
                         )
 
                         // 2: Cassetto
@@ -239,7 +188,7 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                             onClick = { viewModel.setTab(2) },
                             icon = {
                                 Icon(
-                                    imageVector = if (selectedTab == 2) Icons.Filled.CloudUpload else Icons.Outlined.CloudUpload,
+                                    imageVector = if (selectedTab == 2) Icons.Filled.Lock else Icons.Outlined.Lock,
                                     contentDescription = "Cassetto"
                                 )
                             },
@@ -250,10 +199,14 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     fontSize = 11.sp
                                 )
                             },
-                            colors = navItemColors
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PfcAmber,
+                                selectedTextColor = PfcAmber,
+                                indicatorColor = PfcAmberSoft
+                            )
                         )
 
-                        // 3: Attivita
+                        // 3: Attività
                         NavigationBarItem(
                             selected = selectedTab == 3,
                             onClick = { viewModel.setTab(3) },
@@ -270,35 +223,26 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     fontSize = 11.sp
                                 )
                             },
-                            colors = navItemColors
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = PfcAmber,
+                                selectedTextColor = PfcAmber,
+                                indicatorColor = PfcAmberSoft
+                            )
                         )
                     }
                 },
-                snackbarHost = {
-                    SnackbarHost(snackbarHostState) { data ->
-                        Snackbar(
-                            snackbarData = data,
-                            containerColor = MaterialTheme.colorScheme.inverseSurface,
-                            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                }
+                snackbarHost = { SnackbarHost(snackbarHostState) }
             ) { innerPadding ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
-                        .background(MaterialTheme.colorScheme.background)
                 ) {
                     AnimatedContent(
                         targetState = selectedTab,
-                        transitionSpec = {
-                            fadeIn() togetherWith fadeOut()
-                        },
                         label = "tab_transition"
-                    ) { target ->
-                        when (target) {
+                    ) { tab ->
+                        when (tab) {
                             0 -> {
                                 val years by viewModel.years.collectAsState()
                                 val selectedYear by viewModel.selectedYear.collectAsState()
@@ -308,7 +252,6 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                 val filesLoading by viewModel.filesLoading.collectAsState()
                                 val searchQuery by viewModel.searchQuery.collectAsState()
                                 val searchResults by viewModel.searchResults.collectAsState()
-                                val isSearching by viewModel.isSearching.collectAsState()
                                 val filterFavoritesOnly by viewModel.filterFavoritesOnly.collectAsState()
                                 val selectedBatchKeys by viewModel.selectedBatchKeys.collectAsState()
 
@@ -333,7 +276,9 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     onSelectAllBatch = { viewModel.selectAllFiles() },
                                     onClearBatch = { viewModel.clearBatchSelection() },
                                     onDownloadBatch = { viewModel.downloadBatchSelected() },
-                                    onDownloadSingle = { viewModel.showSnackbar("Scaricato in download: ${it.nome}") }
+                                    onDownloadSingle = { file ->
+                                        viewModel.showSnackbar("Download completato: ${file.nome}")
+                                    }
                                 )
                             }
                             1 -> {
@@ -396,36 +341,13 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                 )
             }
 
-            // Settings Bottom Sheet (with local reminders & diagnostics)
+            // Settings Bottom Sheet
             if (showSettingsSheet) {
                 SettingsBottomSheet(
                     user = currentUser,
                     isDarkMode = isDarkMode,
                     fcmStatus = fcmStatus,
                     fcmTesting = fcmTesting,
-                    isRemindersEnabled = isRemindersEnabled,
-                    isRemindDocumentsEnabled = isRemindDocumentsEnabled,
-                    isRemindMessagesEnabled = isRemindMessagesEnabled,
-                    isRemindDeadlinesEnabled = isRemindDeadlinesEnabled,
-                    reminderIntervalMin = reminderIntervalMin,
-                    hasNotificationPermission = hasNotificationPermission,
-                    onRequestPermission = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            viewModel.updateNotificationPermissionStatus()
-                        }
-                    },
-                    onToggleReminders = { viewModel.setRemindersEnabled(it) },
-                    onToggleRemindDocuments = { viewModel.setRemindDocumentsEnabled(it) },
-                    onToggleRemindMessages = { viewModel.setRemindMessagesEnabled(it) },
-                    onToggleRemindDeadlines = { viewModel.setRemindDeadlinesEnabled(it) },
-                    onSetReminderInterval = { viewModel.setReminderInterval(it) },
-                    onTestDocumentNotification = { viewModel.triggerTestDocumentNotification() },
-                    onTestMessageNotification = { viewModel.triggerTestMessageNotification() },
-                    onTestDeadlineNotification = { viewModel.triggerTestDeadlineNotification() },
-                    onSimulateStudioDocument = { viewModel.simulateIncomingStudioDocument() },
-                    onSimulateStudioMessage = { viewModel.simulateIncomingStudioMessage() },
                     onDismiss = { viewModel.setShowSettingsSheet(false) },
                     onToggleDarkMode = { viewModel.toggleDarkMode() },
                     onSendTestPush = { viewModel.sendTestPushNotification() },

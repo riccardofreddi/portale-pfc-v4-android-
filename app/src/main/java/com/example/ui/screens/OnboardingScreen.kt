@@ -22,6 +22,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -47,22 +48,22 @@ fun OnboardingScreen(
     val slides = listOf(
         OnboardingSlide(
             icon = Icons.Filled.SnippetFolder,
-            iconBg = GeoPrimaryContainer,
-            iconTint = GeoOnPrimaryContainer,
+            iconBg = PfcAmberSoft,
+            iconTint = PfcAmberDark,
             title = "I tuoi documenti, sempre a portata",
             description = "Accedi subito ai tuoi documenti fiscali: F24, modelli unici, bilanci e visure. Organizzati per anno e cartella in modo chiaro e immediato."
         ),
         OnboardingSlide(
             icon = Icons.Filled.Notifications,
-            iconBg = GeoPrimaryContainer,
-            iconTint = GeoOnPrimaryContainer,
+            iconBg = PfcInfoSoft,
+            iconTint = PfcInfo,
             title = "Notifiche e Scadenze in Tempo Reale",
             description = "Ricevi avvisi per nuove scadenze fiscali, comunicazioni dirette dallo Studio e conferme di ricezione documenti anche ad app chiusa."
         ),
         OnboardingSlide(
             icon = Icons.Filled.Lock,
-            iconBg = GeoPrimaryContainer,
-            iconTint = GeoOnPrimaryContainer,
+            iconBg = PfcSuccessSoft,
+            iconTint = PfcSuccess,
             title = "Cassetto Personale e Massima Sicurezza",
             description = "Conserva in sicurezza i tuoi file aziendali (QR Partita IVA, visure, documenti d'identità) e consultali ovunque, anche offline."
         )
@@ -93,12 +94,12 @@ fun OnboardingScreen(
                 // Monogram small
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(GeoPrimary),
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(PfcNavyDark),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("PF", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("PF", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
 
                 if (pagerState.currentPage < slides.size - 1) {
@@ -108,7 +109,7 @@ fun OnboardingScreen(
                     ) {
                         Text(
                             text = "Salta",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = PfcSlate,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp
                         )
@@ -135,7 +136,7 @@ fun OnboardingScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(120.dp)
+                            .size(130.dp)
                             .clip(CircleShape)
                             .background(slide.iconBg),
                         contentAlignment = Alignment.Center
@@ -144,7 +145,7 @@ fun OnboardingScreen(
                             imageVector = slide.icon,
                             contentDescription = null,
                             tint = slide.iconTint,
-                            modifier = Modifier.size(56.dp)
+                            modifier = Modifier.size(64.dp)
                         )
                     }
 
@@ -153,7 +154,7 @@ fun OnboardingScreen(
                     Text(
                         text = slide.title,
                         style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = MaterialTheme.colorScheme.onBackground,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Center
                     )
@@ -163,7 +164,7 @@ fun OnboardingScreen(
                     Text(
                         text = slide.description,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = PfcSlate,
                         textAlign = TextAlign.Center,
                         lineHeight = 24.sp
                     )
@@ -188,7 +189,7 @@ fun OnboardingScreen(
                                 .height(8.dp)
                                 .width(if (isSelected) 24.dp else 8.dp)
                                 .clip(CircleShape)
-                                .background(if (isSelected) GeoPrimary else MaterialTheme.colorScheme.outlineVariant)
+                                .background(if (isSelected) PfcAmber else PfcSlateLight.copy(alpha = 0.4f))
                         )
                     }
                 }
@@ -207,12 +208,12 @@ fun OnboardingScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp)
+                        .height(56.dp)
                         .testTag("onboarding_next_btn"),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = GeoPrimary
+                        containerColor = if (isLast) PfcAmber else PfcNavyDark
                     ),
-                    shape = RoundedCornerShape(50)
+                    shape = RoundedCornerShape(14.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -236,4 +237,3 @@ fun OnboardingScreen(
         }
     }
 }
-

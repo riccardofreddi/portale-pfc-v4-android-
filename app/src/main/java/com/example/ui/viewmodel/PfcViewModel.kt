@@ -7,8 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.local.entity.*
 import com.example.data.model.*
 import com.example.data.repository.PfcRepository
-import com.example.notification.LocalNotificationHelper
-import com.example.notification.ReminderScheduler
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -130,30 +128,7 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
     private val _isDarkMode = MutableStateFlow(prefs.getBoolean("dark_mode", false))
     val isDarkMode: StateFlow<Boolean> = _isDarkMode.asStateFlow()
 
-    // === Local Notification & Reminder Settings ===
-    private val _isRemindersEnabled = MutableStateFlow(ReminderScheduler.isRemindersEnabled(application))
-    val isRemindersEnabled: StateFlow<Boolean> = _isRemindersEnabled.asStateFlow()
-
-    private val _isRemindDocumentsEnabled = MutableStateFlow(ReminderScheduler.isRemindDocumentsEnabled(application))
-    val isRemindDocumentsEnabled: StateFlow<Boolean> = _isRemindDocumentsEnabled.asStateFlow()
-
-    private val _isRemindMessagesEnabled = MutableStateFlow(ReminderScheduler.isRemindMessagesEnabled(application))
-    val isRemindMessagesEnabled: StateFlow<Boolean> = _isRemindMessagesEnabled.asStateFlow()
-
-    private val _isRemindDeadlinesEnabled = MutableStateFlow(ReminderScheduler.isRemindDeadlinesEnabled(application))
-    val isRemindDeadlinesEnabled: StateFlow<Boolean> = _isRemindDeadlinesEnabled.asStateFlow()
-
-    private val _reminderIntervalMin = MutableStateFlow(ReminderScheduler.getIntervalMinutes(application))
-    val reminderIntervalMin: StateFlow<Int> = _reminderIntervalMin.asStateFlow()
-
-    private val _hasNotificationPermission = MutableStateFlow(LocalNotificationHelper.areNotificationsEnabled(application))
-    val hasNotificationPermission: StateFlow<Boolean> = _hasNotificationPermission.asStateFlow()
-
     init {
-        LocalNotificationHelper.createNotificationChannels(application)
-        if (ReminderScheduler.isRemindersEnabled(application)) {
-            ReminderScheduler.scheduleReminders(application)
-        }
         if (_isLoggedIn.value) {
             refreshArchivio()
         }
@@ -435,163 +410,6 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
             val res = repository.sendTestFcm()
             _fcmTesting.value = false
             showSnackbar(res.msg ?: "Notifica inviata al telefono")
-        }
-    }
-
-    // === Local Notification Reminders & Controls ===
-
-    fun updateNotificationPermissionStatus() {
-        val app = getApplication<Application>()
-        _hasNotificationPermission.value = LocalNotificationHelper.areNotificationsEnabled(app)
-    }
-
-    fun setRemindersEnabled(enabled: Boolean) {
-        val app = getApplication<Application>()
-        ReminderScheduler.setRemindersEnabled(app, enabled)
-        _isRemindersEnabled.value = enabled
-        showSnackbar(if (enabled) "Promemoria automatici attivati" else "Promemoria automatici disattivati")
-    }
-
-    fun setRemindDocumentsEnabled(enabled: Boolean) {
-        val app = getApplication<Application>()
-        ReminderScheduler.setRemindDocumentsEnabled(app, enabled)
-        _isRemindDocumentsEnabled.value = enabled
-    }
-
-    fun setRemindMessagesEnabled(enabled: Boolean) {
-        val app = getApplication<Application>()
-        ReminderScheduler.setRemindMessagesEnabled(app, enabled)
-        _isRemindMessagesEnabled.value = enabled
-    }
-
-    fun setRemindDeadlinesEnabled(enabled: Boolean) {
-        val app = getApplication<Application>()
-        ReminderScheduler.setRemindDeadlinesEnabled(app, enabled)
-        _isRemindDeadlinesEnabled.value = enabled
-    }
-
-    fun setReminderInterval(minutes: Int) {
-        val app = getApplication<Application>()
-        ReminderScheduler.setIntervalMinutes(app, minutes)
-        _reminderIntervalMin.value = minutes
-        showSnackbar("Frequenza impostata su: ${getIntervalLabel(minutes)}")
-    }
-
-    fun getIntervalLabel(minutes: Int): String {
-        return when (minutes) {
-            15 -> "Ogni 15 Minuti (Demo / Frequente)"
-            60 -> "Ogni Ora"
-            360 -> "Ogni 6 Ore"
-            1440 -> "Una volta al Giorno"
-            else -> "$minutes Minuti"
-        }
-    }
-
-    fun triggerTestDocumentNotification() {
-        val app = getApplication<Application>()
-        LocalNotificationHelper.showNewDocumentNotification(
-            context = app,
-            docTitle = "Modello F24 - Febbraio 2025 (Tributi e Contributi)",
-            folderName = "F24 e Versamenti",
-            year = "2025",
-            docKey = "2025/F24/F24_Febbraio_2025.pdf"
-        )
-        showSnackbar("Notifica locale 'Nuovo Documento' inviata!")
-    }
-
-    fun triggerTestMessageNotification() {
-        val app = getApplication<Application>()
-        LocalNotificationHelper.showNewMessageNotification(
-            context = app,
-            messageId = "msg-101",
-            title = "Richiesta Estratti Conto e Fatture Q4",
-            corpo = "Gentile cliente, si prega di caricare gli estratti conto per la chiusura contabile.",
-            requiresUpload = true
-        )
-        showSnackbar("Notifica locale 'Messaggio Studio' inviata!")
-    }
-
-    fun triggerTestDeadlineNotification() {
-        val app = getApplication<Application>()
-        LocalNotificationHelper.showDeadlineReminderNotification(
-            context = app,
-            deadlineTitle = "Versamento Saldo IVA e Ritenute F24",
-            scadenzaDate = "16 Marzo 2025",
-            detail = "Il modello F24 telematico è disponibile nell'archivio fiscale del tuo portale."
-        )
-        showSnackbar("Notifica locale 'Promemoria Scadenza' inviata!")
-    }
-
-    fun triggerPeriodicCheckNow() {
-        val app = getApplication<Application>()
-        ReminderScheduler.triggerImmediateCheck(app)
-        showSnackbar("Verifica promemoria eseguita!")
-    }
-
-    fun simulateIncomingStudioDocument() {
-        viewModelScope.launch {
-            val sampleDoc = repository.simulateStudioDocumentUpload(
-                title = "Modello F24 - Saldo IVA e Ritenute Trimestre (${System.currentTimeMillis().toString().takeLast(4)})",
-                folder = "F24 e Versamenti",
-                year = _selectedYear.value
-            )
-            refreshArchivio()
-            val app = getApplication<Application>()
-            LocalNotificationHelper.showNewDocumentNotification(
-                context = app,
-                docTitle = sampleDoc.nome,
-                folderName = sampleDoc.cartella,
-                year = sampleDoc.anno,
-                docKey = sampleDoc.key
-            )
-            showSnackbar("Nuovo documento caricato dallo Studio con notifica!")
-        }
-    }
-
-    fun simulateIncomingStudioMessage() {
-        viewModelScope.launch {
-            val sampleMsg = repository.simulateStudioMessage(
-                title = "Richiesta Documentazione Contabile (${System.currentTimeMillis().toString().takeLast(4)})",
-                body = "Gentile cliente, si richiede l'invio del file contabile per il perfezionamento della dichiarazione periodica.",
-                requiresUpload = true,
-                uploadDesc = "Ricevuta contabile / File PDF"
-            )
-            val app = getApplication<Application>()
-            LocalNotificationHelper.showNewMessageNotification(
-                context = app,
-                messageId = sampleMsg.id,
-                title = sampleMsg.titolo,
-                corpo = sampleMsg.corpo,
-                requiresUpload = sampleMsg.richiedeUpload
-            )
-            showSnackbar("Nuovo messaggio inviato dallo Studio con notifica!")
-        }
-    }
-
-    fun handleNotificationIntent(
-        targetTab: Int?,
-        year: String?,
-        folder: String?,
-        docKey: String?,
-        msgId: String?,
-        showNotifSheet: Boolean
-    ) {
-        if (showNotifSheet) {
-            _showNotifSheet.value = true
-        }
-        if (targetTab != null) {
-            _selectedTab.value = targetTab
-            if (targetTab == 0 && year != null) {
-                _selectedYear.value = year
-                if (folder != null) {
-                    val targetCartella = _cartelle.value.find { it.nome == folder } ?: Cartella(nome = folder, count = 1, nuovi = 1)
-                    _selectedCartella.value = targetCartella
-                    loadFilesForCartella(year, folder)
-                }
-            } else if (targetTab == 1 && msgId != null) {
-                _messaggiTab.value = 0
-                _expandedMsgId.value = msgId
-            }
         }
     }
 }

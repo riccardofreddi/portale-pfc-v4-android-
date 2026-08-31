@@ -76,7 +76,7 @@ fun ArchivioScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = onSearchChange,
-                    placeholder = { Text("Cerca in tutti i documenti...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    placeholder = { Text("Cerca per nome, data (es. 2025, Ottobre) o tipo...", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp) },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Outlined.Search,
@@ -104,7 +104,36 @@ fun ArchivioScreen(
                     )
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                // Quick Filter Tag Chips (F24, Bilancio, Dichiarazioni, 2025, 2024, Cedolini)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    val quickFilters = listOf("F24", "Dichiarazioni", "Bilancio", "Cedolini", "2025", "2024")
+                    items(quickFilters) { filterTag ->
+                        val isSelected = searchQuery.equals(filterTag, ignoreCase = true)
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                if (isSelected) onSearchChange("") else onSearchChange(filterTag)
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            label = { Text(filterTag, fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = GeoPrimaryContainer,
+                                selectedLabelColor = GeoOnPrimaryContainer,
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            ),
+                            border = null,
+                            modifier = Modifier.height(28.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
 
                 // Year Selector Chips + Favorites Filter
                 Row(

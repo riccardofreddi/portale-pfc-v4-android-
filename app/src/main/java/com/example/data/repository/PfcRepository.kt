@@ -212,26 +212,48 @@ class PfcRepository(context: Context) {
 
     suspend fun searchDocuments(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
+        val cleanQuery = query.trim().lowercase()
         try {
             val res = apiClient.apiService.search(query.trim())
-            if (res.isSuccessful && res.body()?.results != null) {
+            if (res.isSuccessful && res.body()?.results != null && res.body()!!.results.isNotEmpty()) {
                 return@withContext res.body()!!.results
             }
         } catch (_: Exception) {}
 
         val all = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
-        all.filter { it.nome.contains(query, ignoreCase = true) || it.cartella.contains(query, ignoreCase = true) }
-            .map {
-                SearchResult(
-                    nome = it.nome,
-                    key = it.key,
-                    anno = it.anno,
-                    cartella = it.cartella,
-                    size = it.size,
-                    sizeStr = it.sizeStr,
-                    score = 1.0
-                )
+        all.filter { doc ->
+            val nameMatch = doc.nome.lowercase().contains(cleanQuery)
+            val folderMatch = doc.cartella.lowercase().contains(cleanQuery)
+            val yearMatch = doc.anno.lowercase().contains(cleanQuery)
+            val dateMatch = doc.lastModified?.lowercase()?.contains(cleanQuery) ?: false
+            
+            // Map common document types aliases
+            val typeAliases = when {
+                cleanQuery.contains("f24") || cleanQuery.contains("tribut") || cleanQuery.contains("delega") -> listOf("f24", "tribut", "imposte")
+                cleanQuery.contains("bilanc") || cleanQuery.contains("nota") -> listOf("bilanc", "contabil", "rendicont")
+                cleanQuery.contains("dichiaraz") || cleanQuery.contains("730") || cleanQuery.contains("redditi") || cleanQuery.contains("iva") || cleanQuery.contains("unico") -> listOf("dichiaraz", "730", "redditi", "iva", "unico")
+                cleanQuery.contains("cedolin") || cleanQuery.contains("busta") || cleanQuery.contains("pag") || cleanQuery.contains("cu") || cleanQuery.contains("lavor") -> listOf("cedolin", "busta", "paghe", "cu", "dipendent")
+                cleanQuery.contains("fattur") -> listOf("fattur", "spese", "elettronic")
+                cleanQuery.contains("ricevut") -> listOf("ricevut", "spid", "quietanz")
+                else -> emptyList()
             }
+
+            val typeMatch = typeAliases.any { alias ->
+                doc.nome.lowercase().contains(alias) || doc.cartella.lowercase().contains(alias)
+            }
+
+            nameMatch || folderMatch || yearMatch || dateMatch || typeMatch
+        }.map {
+            SearchResult(
+                nome = it.nome,
+                key = it.key,
+                anno = it.anno,
+                cartella = it.cartella,
+                size = it.size,
+                sizeStr = it.sizeStr,
+                score = 1.0
+            )
+        }
     }
 
     // === Messaggi ===

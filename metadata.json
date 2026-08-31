@@ -1,0 +1,6 @@
+{
+  "name": "Portale PFC",
+  "description": "Applicazione mobile ufficiale per i clienti dello studio PFC: gestione archivio documenti fiscali, messaggi, cassetto personale e notifiche.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

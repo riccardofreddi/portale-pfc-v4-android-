@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">Portale PFC</string>
+    <string name="nav_archivio">Archivio</string>
+    <string name="nav_messaggi">Messaggi</string>
+    <string name="nav_cassetto">Cassetto</string>
+    <string name="nav_attivita">Attività</string>
+    <string name="login_title">Portale Documenti</string>
+    <string name="login_subtitle">Accesso riservato ai clienti PFC</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="login_button">Accedi</string>
+    <string name="logout">Disconnetti</string>
+    <string name="search_hint">Cerca documenti fiscali...</string>
+    <string name="empty_documents">Nessun documento trovato</string>
+    <string name="empty_messages">Nessun messaggio disponibile</string>
+    <string name="empty_cassetto">Il tuo cassetto personale è vuoto</string>
+    <string name="upload_document">Carica Documento</string>
+</resources>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Rounded squircle badge background -->
+    <path
+        android:pathData="M34,26 C30,26 26,30 26,34 L26,74 C26,78 30,82 34,82 L74,82 C78,82 82,78 82,74 L82,34 C82,30 78,26 74,26 Z"
+        android:fillColor="#F97316" />
+    
+    <!-- Top tab / folder notch highlight -->
+    <path
+        android:pathData="M34,26 L52,26 L56,31 L74,31 C78,31 82,35 82,39 L82,34 C82,30 78,26 74,26 Z"
+        android:fillColor="#EA580C" />
+
+    <!-- Letter P -->
+    <path
+        android:pathData="M36,40 L46,40 C50,40 53,42 53,46 C53,50 50,52 46,52 L42,52 L42,68 L36,68 Z M42,45 L42,47 L46,47 C47.5,47 48.5,46.5 48.5,46 C48.5,45.5 47.5,45 46,45 Z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Letter F -->
+    <path
+        android:pathData="M56,40 L70,40 L70,45 L62,45 L62,49 L68,49 L68,54 L62,54 L62,68 L56,68 Z"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Star accent -->
+    <path
+        android:pathData="M69,33 L70.2,36.5 L74,36.5 L71,38.8 L72.2,42.2 L69,40 L65.8,42.2 L67,38.8 L64,36.5 L67.8,36.5 Z"
+        android:fillColor="#FEF08A" />
+</vector>

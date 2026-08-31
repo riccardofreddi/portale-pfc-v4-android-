@@ -392,7 +392,7 @@ class PfcRepository(context: Context) {
                 return@withContext res.body()!!
             }
         } catch (_: Exception) {}
-        FcmStatusResponse(fcmEnabled = true, serverProjectId = "portale-pfc-v2", userTokens = 1)
+        FcmStatusResponse(fcmEnabled = true, serverProjectId = "portale-pfc-v3", userTokens = 1)
     }
 
     suspend fun sendTestFcm(): FcmTestResponse = withContext(Dispatchers.IO) {

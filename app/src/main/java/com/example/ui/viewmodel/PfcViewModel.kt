@@ -9,6 +9,7 @@ import com.example.data.model.*
 import com.example.data.repository.PfcRepository
 import com.example.notification.LocalNotificationHelper
 import com.example.notification.ReminderScheduler
+import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -153,6 +154,16 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         LocalNotificationHelper.createNotificationChannels(application)
         if (ReminderScheduler.isRemindersEnabled(application)) {
             ReminderScheduler.scheduleReminders(application)
+        }
+        try {
+            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                if (task.isSuccessful && task.result != null) {
+                    val token = task.result
+                    android.util.Log.d("PfcViewModel", "FCM Device Token: $token")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PfcViewModel", "Error fetching FCM token", e)
         }
         if (_isLoggedIn.value) {
             refreshArchivio()

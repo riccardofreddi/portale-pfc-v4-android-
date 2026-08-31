@@ -405,6 +405,81 @@ class PfcRepository(context: Context) {
         FcmTestResponse(ok = true, msg = "Notifica inviata con successo", sent = 1, tokenCount = 1)
     }
 
+    // === Studio Dispatch Simulations (Local Notification Triggers) ===
+
+    suspend fun simulateStudioDocumentUpload(
+        title: String = "Modello F24 - Marzo 2025 (Acconto Imposte)",
+        folder: String = "F24 e Versamenti",
+        year: String = "2025"
+    ): CachedDocumentEntity = withContext(Dispatchers.IO) {
+        val df = SimpleDateFormat("dd/MM/yyyy", Locale.ITALY)
+        val todayStr = df.format(Date())
+        val docKey = "$year/$folder/F24_Simulato_${System.currentTimeMillis()}.pdf"
+        val docEntity = CachedDocumentEntity(
+            key = docKey,
+            nome = title,
+            anno = year,
+            cartella = folder,
+            size = 195_000L,
+            sizeStr = "195 KB",
+            lastModified = todayStr,
+            stato = "nuovo",
+            isPreferito = true
+        )
+        documentDao.insert(docEntity)
+
+        // Insert notification in database
+        val notifEntity = CachedNotificaEntity(
+            id = "notif-doc-${System.currentTimeMillis()}",
+            tipo = "documento_nuovo",
+            titolo = "Nuovo Documento Fiscale",
+            corpo = "Lo Studio ha caricato: $title ($folder)",
+            letta = false,
+            dataCreazione = "Adesso",
+            year = year,
+            folder = folder
+        )
+        notificaDao.insert(notifEntity)
+        logAction("studio_upload", "Lo studio ha caricato il documento: $title")
+        docEntity
+    }
+
+    suspend fun simulateStudioMessage(
+        title: String = "Richiesta Documenti Contabili Trimestrali",
+        body: String = "Gentile Cliente, si richiede l'invio tempestivo dei mastrini bancari e fatture passive non elettroniche per il bilancio trimestrale.",
+        requiresUpload: Boolean = true,
+        uploadDesc: String = "Estratto Conto Trimestrale (PDF)"
+    ): CachedMessaggioEntity = withContext(Dispatchers.IO) {
+        val msgId = "msg-${System.currentTimeMillis()}"
+        val msgEntity = CachedMessaggioEntity(
+            id = msgId,
+            titolo = title,
+            corpo = body,
+            dataInvio = "Adesso",
+            letto = false,
+            archiviato = false,
+            richiedeUpload = requiresUpload,
+            uploadDescrizione = if (requiresUpload) uploadDesc else null,
+            haRisposta = false
+        )
+        messaggioDao.insert(msgEntity)
+
+        // Insert notification in database
+        val notifEntity = CachedNotificaEntity(
+            id = "notif-msg-${System.currentTimeMillis()}",
+            tipo = if (requiresUpload) "richiesta_upload" else "messaggio_nuovo",
+            titolo = if (requiresUpload) "Richiesta Documenti dallo Studio" else "Nuovo Messaggio dallo Studio",
+            corpo = title,
+            letta = false,
+            dataCreazione = "Adesso",
+            year = null,
+            folder = null
+        )
+        notificaDao.insert(notifEntity)
+        logAction("studio_msg", "Nuovo messaggio ricevuto dallo studio: $title")
+        msgEntity
+    }
+
     // === Seed initial data for smooth demo & offline ===
 
     private suspend fun syncAllInitialData() {

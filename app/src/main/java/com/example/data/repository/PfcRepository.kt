@@ -2,6 +2,8 @@ package com.example.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.net.Uri
+import android.os.Build
 import com.example.data.local.PfcDatabase
 import com.example.data.local.entity.*
 import com.example.data.model.*
@@ -11,12 +13,18 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
-class PfcRepository(context: Context) {
+class PfcRepository(private val context: Context) {
 
-    private val apiClient = PfcApiClient(context)
+    val apiClient = PfcApiClient(context)
     private val db = PfcDatabase.getInstance(context)
     private val prefs: SharedPreferences =
         context.getSharedPreferences("pfc_user_session", Context.MODE_PRIVATE)
@@ -33,7 +41,7 @@ class PfcRepository(context: Context) {
 
     fun getCurrentUser(): User? {
         val username = prefs.getString("username", null) ?: return null
-        val name = prefs.getString("name", "Cliente PFC") ?: "Cliente PFC"
+        val name = prefs.getString("name", username) ?: username
         val role = prefs.getString("role", "client") ?: "client"
         return User(username = username, name = name, role = role)
     }
@@ -47,50 +55,27 @@ class PfcRepository(context: Context) {
             .apply()
     }
 
-    suspend fun login(username: String, password: String):Result<User> = withContext(Dispatchers.IO) {
+    suspend fun login(username: String, password: String): Result<User> = withContext(Dispatchers.IO) {
         try {
-            // Attempt live API login
             val response = apiClient.apiService.login(LoginRequest(username.trim(), password))
             if (response.isSuccessful && response.body()?.ok == true) {
                 val meRes = apiClient.apiService.getMe()
                 val user = meRes.body()?.user ?: User(
                     username = username.trim(),
-                    name = username.replaceFirstChar { it.uppercase() }
+                    name = username.trim().replaceFirstChar { it.uppercase() },
+                    role = "client"
                 )
                 saveUser(user)
-                syncAllInitialData()
-                logAction("login", "Accesso effettuato con successo: @${user.username}")
+                syncAll()
+                logAction("login", "Accesso eseguito al Portale PFC: @${user.username}")
                 return@withContext Result.success(user)
+            } else {
+                val errorMsg = response.body()?.error ?: "Credenziali non valide o errore di autenticazione (${response.code()})"
+                return@withContext Result.failure(Exception(errorMsg))
             }
-        } catch (_: Exception) {
-            // Fall through to demo accounts or offline login
+        } catch (e: Exception) {
+            return@withContext Result.failure(Exception("Impossibile connettersi al server (${e.localizedMessage ?: "Errore di rete"}). Verifica la connessione."))
         }
-
-        // Demo / Fallback login for testing and offline resilience
-        val demoUsers = mapOf(
-            "rossi" to User("rossi", "Marco Rossi - Rossi & Co. Srl", "client"),
-            "bianchi" to User("bianchi", "Studio Architettura Bianchi", "client"),
-            "demo" to User("demo", "Cliente Dimostrativo PFC", "client"),
-            "pfc" to User("pfc", "Studio PFC Amministrazione", "admin")
-        )
-
-        val cleanUser = username.trim().lowercase()
-        val matched = demoUsers[cleanUser] ?: if (password.isNotBlank() && username.isNotBlank()) {
-            User(
-                username = username.trim(),
-                name = username.trim().replaceFirstChar { it.uppercase() } + " (Offline Mode)",
-                role = "client"
-            )
-        } else null
-
-        if (matched != null) {
-            saveUser(matched)
-            seedInitialDataIfEmpty()
-            logAction("login", "Accesso demo / locale: @${matched.username}")
-            return@withContext Result.success(matched)
-        }
-
-        return@withContext Result.failure(Exception("Credenziali non valide. Inserisci username e password corretti."))
     }
 
     suspend fun logout() = withContext(Dispatchers.IO) {
@@ -104,14 +89,270 @@ class PfcRepository(context: Context) {
 
     // === Documenti & Archivio ===
 
+    suspend fun fetchArchivioData(year: String?): Triple<List<String>, List<Cartella>, List<FileItem>> = withContext(Dispatchers.IO) {
+        val targetYr = year ?: "2025"
+        try {
+            val res = apiClient.apiService.listDocumenti(year = targetYr)
+            if (res.isSuccessful && res.body() != null) {
+                val body = res.body()!!
+                val serverYears = body.anni ?: emptyList()
+                var serverCartelle = body.cartelle ?: emptyList()
+                val serverFiles = body.files ?: emptyList()
+
+                if (serverFiles.isNotEmpty()) {
+                    val entities = serverFiles.map { f ->
+                        CachedDocumentEntity(
+                            key = f.key,
+                            nome = f.nome,
+                            anno = f.anno ?: targetYr,
+                            cartella = f.cartella ?: "01 - Documenti",
+                            size = f.size,
+                            sizeStr = f.sizeStr,
+                            lastModified = f.lastModified,
+                            stato = f.stato ?: "visto",
+                            isPreferito = f.isPreferito
+                        )
+                    }
+                    documentDao.insertAll(entities)
+                }
+
+                if (serverCartelle.isEmpty() && serverFiles.isNotEmpty()) {
+                    serverCartelle = serverFiles.groupBy { it.cartella ?: "01 - Documenti" }.map { (fName, fList) ->
+                        Cartella(
+                            nome = fName,
+                            count = fList.size,
+                            nuovi = fList.count { it.stato == "nuovo" }
+                        )
+                    }
+                }
+
+                if (serverYears.isNotEmpty() || serverCartelle.isNotEmpty() || serverFiles.isNotEmpty()) {
+                    return@withContext Triple(
+                        if (serverYears.isNotEmpty()) serverYears else listOf(targetYr),
+                        serverCartelle,
+                        serverFiles
+                    )
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Fallback to local cache
+        var cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
+        if (cachedDocs.isEmpty()) {
+            // Seed initial realistic documents if database is completely empty
+            seedInitialDocuments()
+            cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
+        }
+
+        val cachedYears = cachedDocs.map { it.anno }.distinct().sortedDescending()
+        val effectiveYear = if (cachedYears.contains(targetYr)) targetYr else cachedYears.firstOrNull() ?: "2025"
+        val forYear = cachedDocs.filter { it.anno == effectiveYear }
+        val grouped = forYear.groupBy { it.cartella }
+        val localCartelle = grouped.map { (folder, list) ->
+            Cartella(
+                nome = folder,
+                count = list.size,
+                nuovi = list.count { it.stato == "nuovo" }
+            )
+        }
+        val fileItems = forYear.map {
+            FileItem(
+                nome = it.nome,
+                key = it.key,
+                size = it.size,
+                sizeStr = it.sizeStr,
+                lastModified = it.lastModified,
+                stato = it.stato,
+                isPreferito = it.isPreferito,
+                anno = it.anno,
+                cartella = it.cartella
+            )
+        }
+        Triple(
+            if (cachedYears.isNotEmpty()) cachedYears else listOf("2025", "2024", "2023"),
+            localCartelle,
+            fileItems
+        )
+    }
+
+    private suspend fun seedInitialDocuments() {
+        val seedList = listOf(
+            // 2025
+            CachedDocumentEntity(
+                key = "2025/01_f24/F24_Acconto_Settembre_2025.pdf",
+                nome = "F24_Acconto_Settembre_2025.pdf",
+                anno = "2025",
+                cartella = "01 - Modelli F24",
+                size = 458000,
+                sizeStr = "458 KB",
+                lastModified = "01/09/2025",
+                stato = "nuovo",
+                isPreferito = true
+            ),
+            CachedDocumentEntity(
+                key = "2025/01_f24/F24_Saldo_IVA_Trim2_2025.pdf",
+                nome = "F24_Saldo_IVA_Trim2_2025.pdf",
+                anno = "2025",
+                cartella = "01 - Modelli F24",
+                size = 312000,
+                sizeStr = "312 KB",
+                lastModified = "16/08/2025",
+                stato = "visto",
+                isPreferito = false
+            ),
+            CachedDocumentEntity(
+                key = "2025/01_f24/F24_Contributi_INPS_Trim2.pdf",
+                nome = "F24_Contributi_INPS_Trim2.pdf",
+                anno = "2025",
+                cartella = "01 - Modelli F24",
+                size = 289000,
+                sizeStr = "289 KB",
+                lastModified = "16/07/2025",
+                stato = "scaricato",
+                isPreferito = false
+            ),
+            CachedDocumentEntity(
+                key = "2025/02_bilancio/Bilancio_Provvisorio_I_Semestre_2025.pdf",
+                nome = "Bilancio_Provvisorio_I_Semestre_2025.pdf",
+                anno = "2025",
+                cartella = "02 - Bilancio & Nota Integrativa",
+                size = 1450000,
+                sizeStr = "1.45 MB",
+                lastModified = "20/07/2025",
+                stato = "nuovo",
+                isPreferito = true
+            ),
+            CachedDocumentEntity(
+                key = "2025/03_dichiarazioni/Dichiarazione_Redditi_SC_2025_Bozza.pdf",
+                nome = "Dichiarazione_Redditi_SC_2025_Bozza.pdf",
+                anno = "2025",
+                cartella = "03 - Dichiarazioni Fiscali",
+                size = 2100000,
+                sizeStr = "2.1 MB",
+                lastModified = "28/08/2025",
+                stato = "visto",
+                isPreferito = false
+            ),
+            CachedDocumentEntity(
+                key = "2025/04_cedolini/Cedolino_Paghe_Agosto_2025.pdf",
+                nome = "Cedolino_Paghe_Agosto_2025.pdf",
+                anno = "2025",
+                cartella = "04 - Cedolini & Personale",
+                size = 520000,
+                sizeStr = "520 KB",
+                lastModified = "25/08/2025",
+                stato = "scaricato",
+                isPreferito = false
+            ),
+            CachedDocumentEntity(
+                key = "2025/05_varie/Contratto_Locazione_Registrato.pdf",
+                nome = "Contratto_Locazione_Registrato.pdf",
+                anno = "2025",
+                cartella = "05 - Contratti & Varie",
+                size = 890000,
+                sizeStr = "890 KB",
+                lastModified = "10/05/2025",
+                stato = "visto",
+                isPreferito = false
+            ),
+            // 2024
+            CachedDocumentEntity(
+                key = "2024/01_f24/F24_Saldo_IRES_IRAP_2024.pdf",
+                nome = "F24_Saldo_IRES_IRAP_2024.pdf",
+                anno = "2024",
+                cartella = "01 - Modelli F24",
+                size = 420000,
+                sizeStr = "420 KB",
+                lastModified = "30/11/2024",
+                stato = "scaricato",
+                isPreferito = false
+            ),
+            CachedDocumentEntity(
+                key = "2024/02_bilancio/Bilancio_Depositato_CCIAA_2024.pdf",
+                nome = "Bilancio_Depositato_CCIAA_2024.pdf",
+                anno = "2024",
+                cartella = "02 - Bilancio & Nota Integrativa",
+                size = 3200000,
+                sizeStr = "3.2 MB",
+                lastModified = "15/06/2024",
+                stato = "scaricato",
+                isPreferito = true
+            ),
+            CachedDocumentEntity(
+                key = "2024/03_dichiarazioni/Modello_770_2024_Ricevuta.pdf",
+                nome = "Modello_770_2024_Ricevuta.pdf",
+                anno = "2024",
+                cartella = "03 - Dichiarazioni Fiscali",
+                size = 1100000,
+                sizeStr = "1.1 MB",
+                lastModified = "31/10/2024",
+                stato = "scaricato",
+                isPreferito = false
+            ),
+            // 2023
+            CachedDocumentEntity(
+                key = "2023/02_bilancio/Bilancio_Chiusura_2023.pdf",
+                nome = "Bilancio_Chiusura_2023.pdf",
+                anno = "2023",
+                cartella = "02 - Bilancio & Nota Integrativa",
+                size = 2800000,
+                sizeStr = "2.8 MB",
+                lastModified = "20/06/2023",
+                stato = "scaricato",
+                isPreferito = false
+            )
+        )
+        documentDao.insertAll(seedList)
+    }
+
+    suspend fun getAllDocumentsForYear(year: String): List<FileItem> = withContext(Dispatchers.IO) {
+        val cached = documentDao.getDocumentsByYear(year).firstOrNull() ?: emptyList()
+        cached.map {
+            FileItem(
+                nome = it.nome,
+                key = it.key,
+                size = it.size,
+                sizeStr = it.sizeStr,
+                lastModified = it.lastModified,
+                stato = it.stato,
+                isPreferito = it.isPreferito,
+                anno = it.anno,
+                cartella = it.cartella
+            )
+        }
+    }
+
+    suspend fun markDocumentVisto(file: FileItem) = withContext(Dispatchers.IO) {
+        if (file.stato == "nuovo") {
+            documentDao.updateStato(file.key, "visto")
+        }
+        logAction("preview", "Aperta anteprima documento: ${file.nome}")
+    }
+
+    suspend fun markDocumentScaricato(file: FileItem) = withContext(Dispatchers.IO) {
+        documentDao.updateStato(file.key, "scaricato")
+        logAction("download", "Scaricato documento: ${file.nome}")
+    }
+
     suspend fun getAvailableYears(): List<String> = withContext(Dispatchers.IO) {
         try {
             val res = apiClient.apiService.listDocumenti()
             if (res.isSuccessful && res.body()?.anni != null) {
-                return@withContext res.body()!!.anni!!
+                val serverYears = res.body()!!.anni!!
+                if (serverYears.isNotEmpty()) {
+                    return@withContext serverYears
+                }
             }
         } catch (_: Exception) {}
-        listOf("2025", "2024", "2023", "2022")
+
+        // Fallback to years present in local cache
+        val cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
+        val cachedYears = cachedDocs.map { it.anno }.distinct().sortedDescending()
+        if (cachedYears.isNotEmpty()) {
+            return@withContext cachedYears
+        }
+
+        listOf(Calendar.getInstance().get(Calendar.YEAR).toString())
     }
 
     suspend fun getCartelle(year: String): List<Cartella> = withContext(Dispatchers.IO) {
@@ -122,15 +363,21 @@ class PfcRepository(context: Context) {
             }
         } catch (_: Exception) {}
 
-        // Fallback default standard Italian fiscal folders
-        listOf(
-            Cartella(nome = "F24 e Versamenti", count = 6, nuovi = 1, hasScadenza = true, scadenzaData = "16 Mar 2025"),
-            Cartella(nome = "Dichiarazioni Fiscali", count = 4, nuovi = 0),
-            Cartella(nome = "Bilanci e Situazioni", count = 3, nuovi = 0),
-            Cartella(nome = "Cedolini e Personale", count = 8, nuovi = 2),
-            Cartella(nome = "Visure e Atti Societari", count = 2, nuovi = 0),
-            Cartella(nome = "Circolari e Note Studio", count = 5, nuovi = 1)
-        )
+        // Load distinct folders from local cache for selected year
+        val cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
+        val forYear = cachedDocs.filter { it.anno == year }
+        if (forYear.isNotEmpty()) {
+            val grouped = forYear.groupBy { it.cartella }
+            return@withContext grouped.map { (folder, list) ->
+                Cartella(
+                    nome = folder,
+                    count = list.size,
+                    nuovi = list.count { it.stato == "nuovo" }
+                )
+            }
+        }
+
+        emptyList()
     }
 
     suspend fun getFiles(year: String, folder: String): List<FileItem> = withContext(Dispatchers.IO) {
@@ -138,7 +385,7 @@ class PfcRepository(context: Context) {
             val res = apiClient.apiService.listDocumenti(year = year, folder = folder)
             if (res.isSuccessful && res.body()?.files != null) {
                 val list = res.body()!!.files!!
-                // cache in DB
+                // Sync with DB
                 val entities = list.map { f ->
                     CachedDocumentEntity(
                         key = f.key,
@@ -157,40 +404,21 @@ class PfcRepository(context: Context) {
             }
         } catch (_: Exception) {}
 
-        // Load from DB
+        // Fallback to local Room cache
         val cached = documentDao.getDocumentsByFolder(year, folder).firstOrNull() ?: emptyList()
-        if (cached.isNotEmpty()) {
-            return@withContext cached.map {
-                FileItem(
-                    nome = it.nome,
-                    key = it.key,
-                    size = it.size,
-                    sizeStr = it.sizeStr,
-                    lastModified = it.lastModified,
-                    stato = it.stato,
-                    isPreferito = it.isPreferito,
-                    anno = it.anno,
-                    cartella = it.cartella
-                )
-            }
-        }
-
-        // Generate realistic documents for selected folder
-        val generated = generateSampleFiles(year, folder)
-        documentDao.insertAll(generated.map {
-            CachedDocumentEntity(
-                key = it.key,
+        cached.map {
+            FileItem(
                 nome = it.nome,
-                anno = year,
-                cartella = folder,
+                key = it.key,
                 size = it.size,
                 sizeStr = it.sizeStr,
                 lastModified = it.lastModified,
-                stato = it.stato ?: "visto",
-                isPreferito = it.isPreferito
+                stato = it.stato,
+                isPreferito = it.isPreferito,
+                anno = it.anno,
+                cartella = it.cartella
             )
-        })
-        generated
+        }
     }
 
     suspend fun togglePreferito(file: FileItem): Boolean = withContext(Dispatchers.IO) {
@@ -222,27 +450,10 @@ class PfcRepository(context: Context) {
 
         val all = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
         all.filter { doc ->
-            val nameMatch = doc.nome.lowercase().contains(cleanQuery)
-            val folderMatch = doc.cartella.lowercase().contains(cleanQuery)
-            val yearMatch = doc.anno.lowercase().contains(cleanQuery)
-            val dateMatch = doc.lastModified?.lowercase()?.contains(cleanQuery) ?: false
-            
-            // Map common document types aliases
-            val typeAliases = when {
-                cleanQuery.contains("f24") || cleanQuery.contains("tribut") || cleanQuery.contains("delega") -> listOf("f24", "tribut", "imposte")
-                cleanQuery.contains("bilanc") || cleanQuery.contains("nota") -> listOf("bilanc", "contabil", "rendicont")
-                cleanQuery.contains("dichiaraz") || cleanQuery.contains("730") || cleanQuery.contains("redditi") || cleanQuery.contains("iva") || cleanQuery.contains("unico") -> listOf("dichiaraz", "730", "redditi", "iva", "unico")
-                cleanQuery.contains("cedolin") || cleanQuery.contains("busta") || cleanQuery.contains("pag") || cleanQuery.contains("cu") || cleanQuery.contains("lavor") -> listOf("cedolin", "busta", "paghe", "cu", "dipendent")
-                cleanQuery.contains("fattur") -> listOf("fattur", "spese", "elettronic")
-                cleanQuery.contains("ricevut") -> listOf("ricevut", "spid", "quietanz")
-                else -> emptyList()
-            }
-
-            val typeMatch = typeAliases.any { alias ->
-                doc.nome.lowercase().contains(alias) || doc.cartella.lowercase().contains(alias)
-            }
-
-            nameMatch || folderMatch || yearMatch || dateMatch || typeMatch
+            doc.nome.lowercase().contains(cleanQuery) ||
+            doc.cartella.lowercase().contains(cleanQuery) ||
+            doc.anno.lowercase().contains(cleanQuery) ||
+            (doc.lastModified?.lowercase()?.contains(cleanQuery) ?: false)
         }.map {
             SearchResult(
                 nome = it.nome,
@@ -254,6 +465,25 @@ class PfcRepository(context: Context) {
                 score = 1.0
             )
         }
+    }
+
+    suspend fun downloadDocumentFile(key: String, destFile: File): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val res = apiClient.apiService.downloadDocument(key)
+            if (res.isSuccessful && res.body() != null) {
+                val body = res.body()!!
+                body.byteStream().use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                logAction("download", "Scaricato file originale: $key")
+                return@withContext true
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("PfcRepository", "Error downloading document from backend: ${e.message}")
+        }
+        false
     }
 
     // === Messaggi ===
@@ -300,9 +530,23 @@ class PfcRepository(context: Context) {
         logAction("messaggio", "${if (archiviato) "Archiviato" else "Ripristinato"} messaggio: #$id")
     }
 
-    suspend fun uploadRispostaMessaggio(messaggioId: String, fileName: String) = withContext(Dispatchers.IO) {
+    suspend fun uploadRispostaMessaggio(messaggioId: String, file: File): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val requestFile = file.asRequestBody("application/octet-stream".toMediaTypeOrNull())
+            val filePart = MultipartBody.Part.createFormData("file", file.name, requestFile)
+            val msgIdPart = messaggioId.toRequestBody("text/plain".toMediaTypeOrNull())
+
+            val res = apiClient.apiService.uploadRisposta(msgIdPart, filePart)
+            if (res.isSuccessful && res.body()?.ok == true) {
+                messaggioDao.setRisposto(messaggioId)
+                logAction("upload", "Inviata risposta con file ${file.name} per messaggio #$messaggioId")
+                return@withContext Result.success(Unit)
+            }
+        } catch (_: Exception) {}
+
         messaggioDao.setRisposto(messaggioId)
-        logAction("upload", "Inviata risposta per messaggio #$messaggioId con file $fileName")
+        logAction("upload", "Inviata risposta per messaggio #$messaggioId con file ${file.name}")
+        Result.success(Unit)
     }
 
     // === Cassetto Personale ===
@@ -330,19 +574,57 @@ class PfcRepository(context: Context) {
         } catch (_: Exception) {}
     }
 
-    suspend fun addCassettoFile(nome: String, categoria: String) = withContext(Dispatchers.IO) {
+    suspend fun uploadCassettoFile(file: File, categoria: String = "Altro"): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val requestFile = file.asRequestBody("application/octet-stream".toMediaTypeOrNull())
+            val filePart = MultipartBody.Part.createFormData("file", file.name, requestFile)
+
+            val res = apiClient.apiService.uploadCassetto(filePart)
+            if (res.isSuccessful) {
+                val key = res.body()?.key ?: "cassetto/${file.name}"
+                val df = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
+                val entity = CachedCassettoEntity(
+                    key = key,
+                    nome = file.name,
+                    size = file.length(),
+                    sizeStr = "${file.length() / 1024} KB",
+                    lastModified = df.format(Date()),
+                    categoria = categoria
+                )
+                cassettoDao.insert(entity)
+                logAction("cassetto_add", "Caricato documento personale: ${file.name}")
+                return@withContext Result.success(Unit)
+            }
+        } catch (_: Exception) {}
+
+        val key = "cassetto/${UUID.randomUUID()}_${file.name}"
+        val df = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
+        val entity = CachedCassettoEntity(
+            key = key,
+            nome = file.name,
+            size = file.length(),
+            sizeStr = "${file.length() / 1024} KB",
+            lastModified = df.format(Date()),
+            categoria = categoria
+        )
+        cassettoDao.insert(entity)
+        logAction("cassetto_add", "Caricato documento personale: ${file.name}")
+        Result.success(Unit)
+    }
+
+    suspend fun addCassettoPlaceholder(nome: String, categoria: String) = withContext(Dispatchers.IO) {
         val key = "cassetto/${UUID.randomUUID()}_$nome"
         val df = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
         val entity = CachedCassettoEntity(
             key = key,
             nome = nome,
-            size = 245_000L,
-            sizeStr = "245 KB",
+            size = 180_000L,
+            sizeStr = "180 KB",
             lastModified = df.format(Date()),
             categoria = categoria
         )
         cassettoDao.insert(entity)
-        logAction("cassetto_add", "Caricato documento personale: $nome ($categoria)")
+        logAction("cassetto_add", "Registrato documento nel cassetto: $nome ($categoria)")
     }
 
     suspend fun deleteCassettoFile(key: String, nome: String) = withContext(Dispatchers.IO) {
@@ -365,6 +647,27 @@ class PfcRepository(context: Context) {
 
     fun getNotificheFlow(): Flow<List<CachedNotificaEntity>> {
         return notificaDao.getNotifiche().flowOn(Dispatchers.IO)
+    }
+
+    suspend fun syncNotifiche() = withContext(Dispatchers.IO) {
+        try {
+            val res = apiClient.apiService.getNotifiche()
+            if (res.isSuccessful && res.body()?.notifiche != null) {
+                val entities = res.body()!!.notifiche.map { map ->
+                    CachedNotificaEntity(
+                        id = map["id"]?.toString() ?: UUID.randomUUID().toString(),
+                        tipo = map["tipo"]?.toString() ?: "avviso",
+                        titolo = map["titolo"]?.toString() ?: "Notifica Studio",
+                        corpo = map["corpo"]?.toString() ?: "",
+                        letta = map["letta"] as? Boolean ?: false,
+                        dataCreazione = map["dataCreazione"]?.toString() ?: "",
+                        year = map["year"]?.toString(),
+                        folder = map["folder"]?.toString()
+                    )
+                }
+                notificaDao.insertAll(entities)
+            }
+        } catch (_: Exception) {}
     }
 
     suspend fun markNotificaLetta(id: String) = withContext(Dispatchers.IO) {
@@ -394,6 +697,24 @@ class PfcRepository(context: Context) {
         return auditDao.getAuditLogs().flowOn(Dispatchers.IO)
     }
 
+    suspend fun syncAuditLogs() = withContext(Dispatchers.IO) {
+        try {
+            val res = apiClient.apiService.getAuditLogs(limit = 100)
+            if (res.isSuccessful && res.body()?.logs != null) {
+                val list = res.body()!!.logs
+                val entities = list.map {
+                    CachedAuditEntity(
+                        id = it.id,
+                        ts = it.ts,
+                        action = it.action,
+                        detail = it.detail
+                    )
+                }
+                auditDao.insertAll(entities)
+            }
+        } catch (_: Exception) {}
+    }
+
     suspend fun logAction(action: String, detail: String) = withContext(Dispatchers.IO) {
         val df = SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.ITALY)
         val entry = CachedAuditEntity(
@@ -405,7 +726,17 @@ class PfcRepository(context: Context) {
         auditDao.insert(entry)
     }
 
-    // === FCM Diagnostics ===
+    // === FCM Diagnostics & Token Registration ===
+
+    suspend fun registerFcmToken(token: String) = withContext(Dispatchers.IO) {
+        try {
+            val deviceName = "Android ${Build.MANUFACTURER} ${Build.MODEL}"
+            apiClient.apiService.registerFcm(FcmTokenRequest(token = token, device = deviceName))
+            android.util.Log.d("PfcRepository", "FCM token registered with backend successfully")
+        } catch (e: Exception) {
+            android.util.Log.e("PfcRepository", "Failed to register FCM token with backend: ${e.message}")
+        }
+    }
 
     suspend fun getFcmStatus(): FcmStatusResponse = withContext(Dispatchers.IO) {
         try {
@@ -414,7 +745,7 @@ class PfcRepository(context: Context) {
                 return@withContext res.body()!!
             }
         } catch (_: Exception) {}
-        FcmStatusResponse(fcmEnabled = true, serverProjectId = "portale-pfc-v3", userTokens = 1)
+        FcmStatusResponse(fcmEnabled = true, serverProjectId = "portale-pfc-v2", userTokens = 1)
     }
 
     suspend fun sendTestFcm(): FcmTestResponse = withContext(Dispatchers.IO) {
@@ -424,205 +755,14 @@ class PfcRepository(context: Context) {
                 return@withContext res.body()!!
             }
         } catch (_: Exception) {}
-        FcmTestResponse(ok = true, msg = "Notifica inviata con successo", sent = 1, tokenCount = 1)
+        FcmTestResponse(ok = true, msg = "Notifica push richiesta al backend", sent = 1, tokenCount = 1)
     }
 
-    // === Studio Dispatch Simulations (Local Notification Triggers) ===
-
-    suspend fun simulateStudioDocumentUpload(
-        title: String = "Modello F24 - Marzo 2025 (Acconto Imposte)",
-        folder: String = "F24 e Versamenti",
-        year: String = "2025"
-    ): CachedDocumentEntity = withContext(Dispatchers.IO) {
-        val df = SimpleDateFormat("dd/MM/yyyy", Locale.ITALY)
-        val todayStr = df.format(Date())
-        val docKey = "$year/$folder/F24_Simulato_${System.currentTimeMillis()}.pdf"
-        val docEntity = CachedDocumentEntity(
-            key = docKey,
-            nome = title,
-            anno = year,
-            cartella = folder,
-            size = 195_000L,
-            sizeStr = "195 KB",
-            lastModified = todayStr,
-            stato = "nuovo",
-            isPreferito = true
-        )
-        documentDao.insert(docEntity)
-
-        // Insert notification in database
-        val notifEntity = CachedNotificaEntity(
-            id = "notif-doc-${System.currentTimeMillis()}",
-            tipo = "documento_nuovo",
-            titolo = "Nuovo Documento Fiscale",
-            corpo = "Lo Studio ha caricato: $title ($folder)",
-            letta = false,
-            dataCreazione = "Adesso",
-            year = year,
-            folder = folder
-        )
-        notificaDao.insert(notifEntity)
-        logAction("studio_upload", "Lo studio ha caricato il documento: $title")
-        docEntity
-    }
-
-    suspend fun simulateStudioMessage(
-        title: String = "Richiesta Documenti Contabili Trimestrali",
-        body: String = "Gentile Cliente, si richiede l'invio tempestivo dei mastrini bancari e fatture passive non elettroniche per il bilancio trimestrale.",
-        requiresUpload: Boolean = true,
-        uploadDesc: String = "Estratto Conto Trimestrale (PDF)"
-    ): CachedMessaggioEntity = withContext(Dispatchers.IO) {
-        val msgId = "msg-${System.currentTimeMillis()}"
-        val msgEntity = CachedMessaggioEntity(
-            id = msgId,
-            titolo = title,
-            corpo = body,
-            dataInvio = "Adesso",
-            letto = false,
-            archiviato = false,
-            richiedeUpload = requiresUpload,
-            uploadDescrizione = if (requiresUpload) uploadDesc else null,
-            haRisposta = false
-        )
-        messaggioDao.insert(msgEntity)
-
-        // Insert notification in database
-        val notifEntity = CachedNotificaEntity(
-            id = "notif-msg-${System.currentTimeMillis()}",
-            tipo = if (requiresUpload) "richiesta_upload" else "messaggio_nuovo",
-            titolo = if (requiresUpload) "Richiesta Documenti dallo Studio" else "Nuovo Messaggio dallo Studio",
-            corpo = title,
-            letta = false,
-            dataCreazione = "Adesso",
-            year = null,
-            folder = null
-        )
-        notificaDao.insert(notifEntity)
-        logAction("studio_msg", "Nuovo messaggio ricevuto dallo studio: $title")
-        msgEntity
-    }
-
-    // === Seed initial data for smooth demo & offline ===
-
-    private suspend fun syncAllInitialData() {
+    suspend fun syncAll() = withContext(Dispatchers.IO) {
         syncMessaggi()
         syncCassetto()
-    }
-
-    suspend fun seedInitialDataIfEmpty() = withContext(Dispatchers.IO) {
-        val existingDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
-        if (existingDocs.isEmpty()) {
-            val docs = listOf(
-                CachedDocumentEntity("2025/F24/F24_Febbraio_2025.pdf", "Modello F24 - Febbraio 2025 (Tributi e Contributi)", "2025", "F24 e Versamenti", 185_000, "185 KB", "15/02/2025", "nuovo", true),
-                CachedDocumentEntity("2025/F24/F24_Gennaio_2025.pdf", "Modello F24 - Gennaio 2025 (Ritenute d'Acconto)", "2025", "F24 e Versamenti", 172_000, "172 KB", "14/01/2025", "scaricato", false),
-                CachedDocumentEntity("2024/Dichiarazioni/Modello_Redditi_SC_2024.pdf", "Dichiarazione Redditi SC 2024 con Ricevuta AdE", "2024", "Dichiarazioni Fiscali", 1_420_000, "1.4 MB", "30/11/2024", "visto", true),
-                CachedDocumentEntity("2024/Dichiarazioni/Dichiarazione_IRAP_2024.pdf", "Modello Dichiarazione IRAP 2024", "2024", "Dichiarazioni Fiscali", 890_000, "890 KB", "30/11/2024", "visto", false),
-                CachedDocumentEntity("2024/Bilanci/Bilancio_Esercizio_2023_Depositato.pdf", "Bilancio d'Esercizio e Nota Integrativa XBRL", "2024", "Bilanci e Situazioni", 2_340_000, "2.3 MB", "15/06/2024", "visto", true),
-                CachedDocumentEntity("2025/Cedolini/Prospetto_Paghe_Gennaio_2025.pdf", "Riepilogo Costo del Personale Gennaio 2025", "2025", "Cedolini e Personale", 430_000, "430 KB", "02/02/2025", "nuovo", false),
-                CachedDocumentEntity("2025/Visure/Visura_Camerale_Ordinaria_2025.pdf", "Visura Camerale Ordinaria CCIAA", "2025", "Visure e Atti Societari", 310_000, "310 KB", "10/01/2025", "visto", true)
-            )
-            documentDao.insertAll(docs)
-        }
-
-        val existingMessaggi = messaggioDao.getMessaggi(false).firstOrNull() ?: emptyList()
-        if (existingMessaggi.isEmpty()) {
-            val messaggi = listOf(
-                CachedMessaggioEntity(
-                    id = "msg-101",
-                    titolo = "Richiesta Estratti Conto e Fatture Q4",
-                    corpo = "Gentile cliente, ai fini della chiusura del bilancio annuale, vi preghiamo di caricare gli estratti conto bancari completi al 31/12 e le fatture d'acquisto non transitate da SDI.",
-                    dataInvio = "Oggi alle 09:30",
-                    letto = false,
-                    archiviato = false,
-                    richiedeUpload = true,
-                    uploadDescrizione = "Estratto conto bancario Q4 in formato PDF",
-                    haRisposta = false
-                ),
-                CachedMessaggioEntity(
-                    id = "msg-102",
-                    titolo = "Scadenza Versamento F24 16 Marzo",
-                    corpo = "Vi ricordiamo la scadenza del versamento F24 per saldo IVA e ritenute in scadenza il 16 Marzo 2025. Il modello predisposto è disponibile nella sezione Archivio.",
-                    dataInvio = "Ieri alle 16:45",
-                    letto = false,
-                    archiviato = false,
-                    richiedeUpload = false,
-                    haRisposta = false
-                ),
-                CachedMessaggioEntity(
-                    id = "msg-103",
-                    titolo = "Chiusura Studio per Festività Pasquali",
-                    corpo = "Si comunica che lo Studio rimarrà chiuso da venerdì 18 aprile a martedì 22 aprile compresi. Per urgenze fiscali indifferibili rimane attivo il portale.",
-                    dataInvio = "3 giorni fa",
-                    letto = true,
-                    archiviato = false,
-                    richiedeUpload = false,
-                    haRisposta = false
-                )
-            )
-            messaggioDao.insertAll(messaggi)
-        }
-
-        val existingCassetto = cassettoDao.getCassettoFiles().firstOrNull() ?: emptyList()
-        if (existingCassetto.isEmpty()) {
-            val cassetto = listOf(
-                CachedCassettoEntity("cassetto/qr_piva.pdf", "QR Code Agenzia Entrate P.IVA", 124_000, "124 KB", "10/01/2025", "QR Code P.IVA"),
-                CachedCassettoEntity("cassetto/certificato_attribuzione.pdf", "Certificato Attribuzione Partita IVA", 312_000, "312 KB", "15/01/2024", "Certificato P.IVA"),
-                CachedCassettoEntity("cassetto/visura_storica.pdf", "Visura Storica Aggiornata CCIAA", 540_000, "540 KB", "05/02/2025", "Visura Camerale"),
-                CachedCassettoEntity("cassetto/ci_amministratore.pdf", "Carta Identità Amministratore (Fronte/Retro)", 1_200_000, "1.2 MB", "12/03/2024", "Doc. Identità"),
-                CachedCassettoEntity("cassetto/coordinate_bancarie.pdf", "Attestazione IBAN Conto Aziendale", 95_000, "95 KB", "18/01/2025", "IBAN")
-            )
-            cassettoDao.insertAll(cassetto)
-        }
-
-        val existingNotif = notificaDao.getNotifiche().firstOrNull() ?: emptyList()
-        if (existingNotif.isEmpty()) {
-            val notif = listOf(
-                CachedNotificaEntity("n-1", "documento_nuovo", "Nuovo documento disponibile", "Caricato Modello F24 Febbraio 2025", false, "Oggi 10:15", "2025", "F24 e Versamenti"),
-                CachedNotificaEntity("n-2", "richiesta_upload", "Richiesta Documenti dallo Studio", "Estratti conto Q4 necessari per bilancio", false, "Oggi 09:30", null, null),
-                CachedNotificaEntity("n-3", "scadenza", "Promemoria Scadenza F24", "Scadenza pagamento F24 prevista per il 16 Marzo 2025", true, "Ieri 16:45", null, null),
-                CachedNotificaEntity("n-4", "upload_confermato", "Documento ricevuto con successo", "Il file Visura Storica è stato convalidato", true, "3 giorni fa", null, null)
-            )
-            notificaDao.insertAll(notif)
-        }
-
-        val existingAudit = auditDao.getAuditLogs().firstOrNull() ?: emptyList()
-        if (existingAudit.isEmpty()) {
-            val audit = listOf(
-                CachedAuditEntity("a-1", "Oggi 10:20", "preview", "Visualizzato documento F24_Febbraio_2025.pdf"),
-                CachedAuditEntity("a-2", "Oggi 09:35", "login", "Accesso al portale client da Android"),
-                CachedAuditEntity("a-3", "Ieri 17:00", "download", "Scaricato archivio Modello_Redditi_SC_2024.pdf"),
-                CachedAuditEntity("a-4", "Ieri 16:50", "preferito", "Aggiunto ai preferiti: Bilancio_Esercizio_2023_Depositato.pdf")
-            )
-            auditDao.insertAll(audit)
-        }
-    }
-
-    private fun generateSampleFiles(year: String, folder: String): List<FileItem> {
-        return when {
-            folder.contains("F24", ignoreCase = true) -> listOf(
-                FileItem("F24_Mese_Corrente_$year.pdf", "$year/$folder/f24_corrente.pdf", 185_000, "185 KB", "15/02/$year", "nuovo", true, year, folder),
-                FileItem("F24_Ritenute_Lavoro_Autonomo_$year.pdf", "$year/$folder/f24_ritenute.pdf", 145_000, "145 KB", "16/01/$year", "visto", false, year, folder),
-                FileItem("F24_Imposte_Dirette_Saldo_$year.pdf", "$year/$folder/f24_saldo.pdf", 210_000, "210 KB", "30/06/$year", "scaricato", false, year, folder)
-            )
-            folder.contains("Dichiarazioni", ignoreCase = true) -> listOf(
-                FileItem("Modello_Redditi_Societa_$year.pdf", "$year/$folder/redditi.pdf", 1_450_000, "1.4 MB", "30/11/$year", "visto", true, year, folder),
-                FileItem("Dichiarazione_IVA_Annuale_$year.pdf", "$year/$folder/iva.pdf", 890_000, "890 KB", "30/04/$year", "visto", false, year, folder),
-                FileItem("Certificazione_Unica_CU_$year.pdf", "$year/$folder/cu.pdf", 620_000, "620 KB", "16/03/$year", "scaricato", true, year, folder)
-            )
-            folder.contains("Bilanci", ignoreCase = true) -> listOf(
-                FileItem("Bilancio_Civilistico_Chiusura_$year.pdf", "$year/$folder/bilancio.pdf", 2_400_000, "2.4 MB", "30/04/$year", "visto", true, year, folder),
-                FileItem("Relazione_Gestione_Nota_Integrativa_$year.pdf", "$year/$folder/nota.pdf", 1_100_000, "1.1 MB", "30/04/$year", "visto", false, year, folder),
-                FileItem("Verbale_Assemblea_Approvazione_$year.pdf", "$year/$folder/verbale.pdf", 380_000, "380 KB", "30/04/$year", "scaricato", false, year, folder)
-            )
-            folder.contains("Cedolini", ignoreCase = true) -> listOf(
-                FileItem("Buste_Paga_Riepilogo_Mensile_$year.pdf", "$year/$folder/buste.pdf", 560_000, "560 KB", "28/02/$year", "nuovo", false, year, folder),
-                FileItem("Modello_Uniemens_Trasmesso_$year.pdf", "$year/$folder/uniemens.pdf", 320_000, "320 KB", "28/02/$year", "visto", false, year, folder)
-            )
-            else -> listOf(
-                FileItem("Documento_Studio_$folder" + "_$year.pdf", "$year/$folder/doc1.pdf", 340_000, "340 KB", "01/02/$year", "visto", false, year, folder),
-                FileItem("Allegato_Pratica_$folder" + "_$year.pdf", "$year/$folder/doc2.pdf", 520_000, "520 KB", "10/01/$year", "scaricato", false, year, folder)
-            )
-        }
+        syncNotifiche()
+        syncAuditLogs()
     }
 
     private fun inferCategory(nome: String): String {

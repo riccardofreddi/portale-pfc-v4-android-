@@ -168,16 +168,16 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                     val unreadMsgCount = attiviList.count { !it.letto }
 
                     NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        tonalElevation = 2.dp,
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 3.dp,
                         modifier = Modifier
                             .windowInsetsPadding(WindowInsets.navigationBars)
                             .testTag("bottom_nav_bar")
                     ) {
                         val navItemColors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.onSurface,
-                            selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                            indicatorColor = GeoSecondaryContainer,
+                            selectedIconColor = GeoPrimary,
+                            selectedTextColor = GeoPrimary,
+                            indicatorColor = PfcGoldContainer,
                             unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                             unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -311,6 +311,7 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                 val isSearching by viewModel.isSearching.collectAsState()
                                 val filterFavoritesOnly by viewModel.filterFavoritesOnly.collectAsState()
                                 val selectedBatchKeys by viewModel.selectedBatchKeys.collectAsState()
+                                val archivioViewMode by viewModel.archivioViewMode.collectAsState()
 
                                 ArchivioScreen(
                                     years = years,
@@ -323,6 +324,8 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     searchResults = searchResults,
                                     filterFavoritesOnly = filterFavoritesOnly,
                                     selectedBatchKeys = selectedBatchKeys,
+                                    archivioViewMode = archivioViewMode,
+                                    onSetArchivioViewMode = { viewModel.setArchivioViewMode(it) },
                                     onSelectYear = { viewModel.selectYear(it) },
                                     onSelectCartella = { viewModel.selectCartella(it) },
                                     onSearchChange = { viewModel.setSearchQuery(it) },
@@ -333,7 +336,7 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     onSelectAllBatch = { viewModel.selectAllFiles() },
                                     onClearBatch = { viewModel.clearBatchSelection() },
                                     onDownloadBatch = { viewModel.downloadBatchSelected() },
-                                    onDownloadSingle = { viewModel.showSnackbar("Scaricato in download: ${it.nome}") }
+                                    onDownloadSingle = { viewModel.downloadDocument(it) }
                                 )
                             }
                             1 -> {
@@ -424,8 +427,6 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                     onTestDocumentNotification = { viewModel.triggerTestDocumentNotification() },
                     onTestMessageNotification = { viewModel.triggerTestMessageNotification() },
                     onTestDeadlineNotification = { viewModel.triggerTestDeadlineNotification() },
-                    onSimulateStudioDocument = { viewModel.simulateIncomingStudioDocument() },
-                    onSimulateStudioMessage = { viewModel.simulateIncomingStudioMessage() },
                     onDismiss = { viewModel.setShowSettingsSheet(false) },
                     onToggleDarkMode = { viewModel.toggleDarkMode() },
                     onSendTestPush = { viewModel.sendTestPushNotification() },
@@ -439,7 +440,7 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                     file = file,
                     onDismiss = { viewModel.setPreviewFile(null) },
                     onDownload = {
-                        viewModel.showSnackbar("Download completato: ${file.nome}")
+                        viewModel.downloadDocument(file)
                     },
                     onToggleFavorite = { viewModel.toggleFavorite(file) }
                 )

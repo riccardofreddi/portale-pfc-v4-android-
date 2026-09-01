@@ -12,6 +12,9 @@ interface DocumentDao {
     @Query("SELECT * FROM cached_documents WHERE anno = :anno AND cartella = :cartella")
     fun getDocumentsByFolder(anno: String, cartella: String): Flow<List<CachedDocumentEntity>>
 
+    @Query("SELECT * FROM cached_documents WHERE anno = :anno ORDER BY lastModified DESC")
+    fun getDocumentsByYear(anno: String): Flow<List<CachedDocumentEntity>>
+
     @Query("SELECT * FROM cached_documents WHERE isPreferito = 1")
     fun getPreferiti(): Flow<List<CachedDocumentEntity>>
 
@@ -23,6 +26,9 @@ interface DocumentDao {
 
     @Query("UPDATE cached_documents SET isPreferito = :isPreferito WHERE `key` = :key")
     suspend fun updatePreferito(key: String, isPreferito: Boolean)
+
+    @Query("UPDATE cached_documents SET stato = :stato WHERE `key` = :key")
+    suspend fun updateStato(key: String, stato: String)
 
     @Query("DELETE FROM cached_documents")
     suspend fun clearAll()

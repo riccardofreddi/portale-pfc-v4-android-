@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +19,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -48,10 +51,11 @@ fun MessaggiScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Top Tab Selector (Attivi / Archiviati)
+        // Top Tab Selector (Attivi / Archiviati) with Executive Theme
         Surface(
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp
+            tonalElevation = 2.dp,
+            shadowElevation = 2.dp
         ) {
             TabRow(
                 selectedTabIndex = activeTab,
@@ -60,7 +64,8 @@ fun MessaggiScreen(
                 indicator = { tabPositions ->
                     TabRowDefaults.SecondaryIndicator(
                         modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]),
-                        color = GeoPrimary
+                        color = GeoPrimary,
+                        height = 3.dp
                     )
                 }
             ) {
@@ -70,17 +75,18 @@ fun MessaggiScreen(
                     text = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
                                 "Messaggi Attivi",
                                 color = if (activeTab == 0) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = if (activeTab == 0) FontWeight.Bold else FontWeight.Medium
+                                fontWeight = if (activeTab == 0) FontWeight.ExtraBold else FontWeight.Medium,
+                                fontSize = 14.sp
                             )
                             if (unreadCount > 0) {
                                 Box(
                                     modifier = Modifier
-                                        .size(18.dp)
+                                        .size(20.dp)
                                         .clip(CircleShape)
                                         .background(PfcDanger),
                                     contentAlignment = Alignment.Center
@@ -103,7 +109,8 @@ fun MessaggiScreen(
                         Text(
                             "Archiviati (${archiviatiList.size})",
                             color = if (activeTab == 1) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = if (activeTab == 1) FontWeight.Bold else FontWeight.Medium
+                            fontWeight = if (activeTab == 1) FontWeight.ExtraBold else FontWeight.Medium,
+                            fontSize = 14.sp
                         )
                     }
                 )
@@ -147,26 +154,28 @@ fun MessaggioCard(
     onSubmitUpload: (fileName: String) -> Unit
 ) {
     var selectedReplyFile by remember { mutableStateOf<String?>(null) }
+    val isUnread = !msg.letto && !msg.archiviato
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(20.dp))
             .clickable { onCardClick() }
             .testTag("msg_card_${msg.id}"),
         colors = CardDefaults.cardColors(
-            containerColor = if (!msg.letto && !msg.archiviato) GeoPrimaryContainer.copy(alpha = 0.4f) else MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (isUnread) GeoPrimaryContainer.copy(alpha = 0.45f) else MaterialTheme.colorScheme.surface
         ),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isUnread) 3.dp else 1.dp),
         border = BorderStroke(
             1.dp,
-            if (!msg.letto && !msg.archiviato) GeoPrimary else MaterialTheme.colorScheme.outlineVariant
+            if (isUnread) GeoPrimary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(18.dp)
         ) {
             // Header Row
             Row(
@@ -176,15 +185,21 @@ fun MessaggioCard(
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    if (!msg.letto && !msg.archiviato) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(GeoPrimary)
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isUnread) GeoPrimary else MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (isUnread) Icons.Filled.Mail else Icons.Outlined.MailOutline,
+                            contentDescription = null,
+                            tint = if (isUnread) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
                         )
                     }
 
@@ -192,7 +207,7 @@ fun MessaggioCard(
                         Text(
                             text = msg.titolo,
                             style = MaterialTheme.typography.titleMedium,
-                            fontWeight = if (!msg.letto) FontWeight.Bold else FontWeight.SemiBold,
+                            fontWeight = if (isUnread) FontWeight.ExtraBold else FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
@@ -217,27 +232,29 @@ fun MessaggioCard(
             }
 
             // Badges row
-            Row(
-                modifier = Modifier.padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (msg.richiedeUpload && !msg.haRisposta) {
-                    StatusBadge(status = "richiede_upload")
-                }
-                if (msg.haRisposta) {
-                    StatusBadge(status = "risposto")
+            if ((msg.richiedeUpload && !msg.haRisposta) || msg.haRisposta) {
+                Row(
+                    modifier = Modifier.padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (msg.richiedeUpload && !msg.haRisposta) {
+                        StatusBadge(status = "richiede_upload")
+                    }
+                    if (msg.haRisposta) {
+                        StatusBadge(status = "risposto")
+                    }
                 }
             }
 
             // Message Preview / Full Body
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = msg.corpo,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = if (isExpanded) Int.MAX_VALUE else 2,
                 overflow = TextOverflow.Ellipsis,
-                lineHeight = 20.sp
+                lineHeight = 22.sp
             )
 
             // Expanded Actions: Upload Request section
@@ -250,12 +267,13 @@ fun MessaggioCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 14.dp),
-                    colors = CardDefaults.cardColors(containerColor = GeoPrimaryContainer),
-                    shape = RoundedCornerShape(14.dp)
+                    colors = CardDefaults.cardColors(containerColor = PfcMidnight),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, PfcGold.copy(alpha = 0.4f))
                 ) {
                     Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -264,14 +282,14 @@ fun MessaggioCard(
                             Icon(
                                 imageVector = Icons.Filled.UploadFile,
                                 contentDescription = null,
-                                tint = GeoOnPrimaryContainer,
+                                tint = PfcGold,
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
                                 text = "Richiesta Documento dallo Studio",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
-                                color = GeoOnPrimaryContainer
+                                color = Color.White
                             )
                         }
 
@@ -279,7 +297,8 @@ fun MessaggioCard(
                             Text(
                                 text = msg.uploadDescrizione,
                                 fontSize = 12.sp,
-                                color = GeoOnPrimaryContainer
+                                color = Color.White.copy(alpha = 0.85f),
+                                lineHeight = 18.sp
                             )
                         }
 
@@ -290,17 +309,19 @@ fun MessaggioCard(
                                     selectedReplyFile = "Documento_Richiesto_${msg.id.take(4)}.pdf"
                                 },
                                 shape = RoundedCornerShape(50),
+                                border = BorderStroke(1.dp, PfcGold.copy(alpha = 0.5f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(Icons.Filled.AttachFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Filled.AttachFile, contentDescription = null, tint = PfcGoldLight, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Seleziona File da Inviare", fontSize = 13.sp)
+                                Text("Seleziona File da Inviare", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                             }
                         } else {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color.White, RoundedCornerShape(10.dp))
+                                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                                    .border(1.dp, PfcGold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
                                     .padding(horizontal = 12.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
@@ -309,13 +330,13 @@ fun MessaggioCard(
                                     text = selectedReplyFile!!,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = GeoOnPrimaryContainer
+                                    color = Color.White
                                 )
                                 IconButton(
                                     onClick = { selectedReplyFile = null },
                                     modifier = Modifier.size(24.dp)
                                 ) {
-                                    Icon(Icons.Filled.Close, contentDescription = "Rimuovi", modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Filled.Close, contentDescription = "Rimuovi", tint = Color.White, modifier = Modifier.size(14.dp))
                                 }
                             }
 
@@ -323,11 +344,11 @@ fun MessaggioCard(
                                 onClick = {
                                     onSubmitUpload(selectedReplyFile!!)
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
+                                colors = ButtonDefaults.buttonColors(containerColor = PfcGold),
                                 shape = RoundedCornerShape(50),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Invia Risposta con Documento", color = Color.White, fontWeight = FontWeight.Bold)
+                                Text("Invia Risposta con Documento", color = PfcMidnight, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -336,4 +357,3 @@ fun MessaggioCard(
         }
     }
 }
-

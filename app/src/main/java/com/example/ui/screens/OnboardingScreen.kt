@@ -3,7 +3,9 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
@@ -22,6 +24,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -34,8 +38,6 @@ import kotlinx.coroutines.launch
 
 data class OnboardingSlide(
     val icon: ImageVector,
-    val iconBg: Color,
-    val iconTint: Color,
     val title: String,
     val description: String
 )
@@ -47,24 +49,18 @@ fun OnboardingScreen(
     val slides = listOf(
         OnboardingSlide(
             icon = Icons.Filled.SnippetFolder,
-            iconBg = GeoPrimaryContainer,
-            iconTint = GeoOnPrimaryContainer,
-            title = "I tuoi documenti, sempre a portata",
-            description = "Accedi subito ai tuoi documenti fiscali: F24, modelli unici, bilanci e visure. Organizzati per anno e cartella in modo chiaro e immediato."
+            title = "Documenti Fiscali in Tasca",
+            description = "Accedi istantaneamente ai tuoi F24, bilanci, dichiarazioni dei redditi e visure camerali sempre sincronizzati con lo Studio PFC."
         ),
         OnboardingSlide(
             icon = Icons.Filled.Notifications,
-            iconBg = GeoPrimaryContainer,
-            iconTint = GeoOnPrimaryContainer,
-            title = "Notifiche e Scadenze in Tempo Reale",
-            description = "Ricevi avvisi per nuove scadenze fiscali, comunicazioni dirette dallo Studio e conferme di ricezione documenti anche ad app chiusa."
+            title = "Notifiche & Scadenze Live",
+            description = "Ricevi avvisi tempestivi per le scadenze fiscali, comunicazioni dello studio e solleciti per documenti mancanti anche ad app chiusa."
         ),
         OnboardingSlide(
             icon = Icons.Filled.Lock,
-            iconBg = GeoPrimaryContainer,
-            iconTint = GeoOnPrimaryContainer,
-            title = "Cassetto Personale e Massima Sicurezza",
-            description = "Conserva in sicurezza i tuoi file aziendali (QR Partita IVA, visure, documenti d'identità) e consultali ovunque, anche offline."
+            title = "Cassetto Fiscale Cifrato",
+            description = "Conserva e condividi in massima sicurezza i certificati di Partita IVA, documenti d'identità e dati bancari con crittografia end-to-end."
         )
     )
 
@@ -73,167 +69,184 @@ fun OnboardingScreen(
 
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
+        color = PfcMidnight
     ) {
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            PfcMidnight,
+                            PfcNavy,
+                            PfcMidnight
+                        )
+                    )
+                )
         ) {
-            // Header with Skip Button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Monogram small
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(GeoPrimary),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("PF", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-
-                if (pagerState.currentPage < slides.size - 1) {
-                    TextButton(
-                        onClick = onFinish,
-                        modifier = Modifier.testTag("skip_onboarding_btn")
-                    ) {
-                        Text(
-                            text = "Salta",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
-                        )
-                    }
-                } else {
-                    Spacer(modifier = Modifier.width(48.dp))
-                }
-            }
-
-            // Pager Slide Content
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) { page ->
-                val slide = slides[page]
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(120.dp)
-                            .clip(CircleShape)
-                            .background(slide.iconBg),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = slide.icon,
-                            contentDescription = null,
-                            tint = slide.iconTint,
-                            modifier = Modifier.size(56.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(36.dp))
-
-                    Text(
-                        text = slide.title,
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = slide.description,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        lineHeight = 24.sp
-                    )
-                }
-            }
-
-            // Bottom Navigation & CTA
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Page Indicator Dots
+                // Header with Monogram & Skip Button
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    repeat(slides.size) { index ->
-                        val isSelected = pagerState.currentPage == index
+                    // Executive Crest Monogram
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                Brush.linearGradient(listOf(PfcGold, PfcGoldDark))
+                            )
+                            .shadow(4.dp, RoundedCornerShape(12.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("PFC", color = PfcMidnight, fontWeight = FontWeight.Black, fontSize = 13.sp)
+                    }
+
+                    if (pagerState.currentPage < slides.size - 1) {
+                        TextButton(
+                            onClick = onFinish,
+                            modifier = Modifier.testTag("skip_onboarding_btn")
+                        ) {
+                            Text(
+                                text = "Salta",
+                                color = PfcGoldLight,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.width(48.dp))
+                    }
+                }
+
+                // Pager Slide Content
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                ) { page ->
+                    val slide = slides[page]
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
                         Box(
                             modifier = Modifier
-                                .height(8.dp)
-                                .width(if (isSelected) 24.dp else 8.dp)
+                                .size(130.dp)
                                 .clip(CircleShape)
-                                .background(if (isSelected) GeoPrimary else MaterialTheme.colorScheme.outlineVariant)
+                                .background(PfcGold.copy(alpha = 0.12f))
+                                .border(2.dp, PfcGold.copy(alpha = 0.5f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = slide.icon,
+                                contentDescription = null,
+                                tint = PfcGold,
+                                modifier = Modifier.size(60.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(40.dp))
+
+                        Text(
+                            text = slide.title,
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = Color.White,
+                            fontWeight = FontWeight.ExtraBold,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = slide.description,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = Color.White.copy(alpha = 0.8f),
+                            textAlign = TextAlign.Center,
+                            lineHeight = 24.sp
                         )
                     }
                 }
 
-                // Action Button
-                val isLast = pagerState.currentPage == slides.size - 1
-                Button(
-                    onClick = {
-                        if (isLast) {
-                            onFinish()
-                        } else {
-                            scope.launch {
-                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp)
-                        .testTag("onboarding_next_btn"),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = GeoPrimary
-                    ),
-                    shape = RoundedCornerShape(50)
+                // Bottom Navigation & CTA
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(22.dp)
                 ) {
+                    // Page Indicator Dots
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = if (isLast) "Inizia Subito" else "Continua",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Icon(
-                            imageVector = if (isLast) Icons.Filled.Check else Icons.Filled.ArrowForward,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(18.dp)
-                        )
+                        repeat(slides.size) { index ->
+                            val isSelected = pagerState.currentPage == index
+                            Box(
+                                modifier = Modifier
+                                    .height(8.dp)
+                                    .width(if (isSelected) 28.dp else 8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isSelected) PfcGold else Color.White.copy(alpha = 0.25f))
+                            )
+                        }
+                    }
+
+                    // Action Button
+                    val isLast = pagerState.currentPage == slides.size - 1
+                    Button(
+                        onClick = {
+                            if (isLast) {
+                                onFinish()
+                            } else {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                            .testTag("onboarding_next_btn"),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = PfcGold
+                        ),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = if (isLast) "Entra nel Portale" else "Continua",
+                                color = PfcMidnight,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Icon(
+                                imageVector = if (isLast) Icons.Filled.Check else Icons.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = PfcMidnight,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
         }
     }
 }
-

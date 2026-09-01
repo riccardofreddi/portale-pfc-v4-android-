@@ -13,31 +13,36 @@ import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import java.util.concurrent.TimeUnit
 
-class PfcApiClient(context: Context) {
+class PfcApiClient(private val context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("pfc_auth_prefs", Context.MODE_PRIVATE)
 
     private val cookieJar = object : CookieJar {
         override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-            val sessionCookie = cookies.firstOrNull { it.name == "pfc_session_cookie" || it.name.contains("session") }
-            if (sessionCookie != null) {
-                prefs.edit().putString("saved_cookie", sessionCookie.toString()).apply()
+            val savedSet = prefs.getStringSet("all_cookies", mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+            cookies.forEach { cookie ->
+                // Remove older version of same cookie name on host
+                savedSet.removeAll { oldStr ->
+                    val oldCookie = Cookie.parse(url, oldStr)
+                    oldCookie?.name == cookie.name
+                }
+                savedSet.add(cookie.toString())
             }
+            prefs.edit().putStringSet("all_cookies", savedSet).apply()
         }
 
         override fun loadForRequest(url: HttpUrl): List<Cookie> {
-            val saved = prefs.getString("saved_cookie", null) ?: return emptyList()
-            val parsed = Cookie.parse(url, saved)
-            return if (parsed != null) listOf(parsed) else emptyList()
+            val savedSet = prefs.getStringSet("all_cookies", emptySet()) ?: emptySet()
+            return savedSet.mapNotNull { Cookie.parse(url, it) }
         }
     }
 
     private val okHttpClient = OkHttpClient.Builder()
         .cookieJar(cookieJar)
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .writeTimeout(45, TimeUnit.SECONDS)
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
         })
@@ -47,16 +52,34 @@ class PfcApiClient(context: Context) {
         .addLast(KotlinJsonAdapterFactory())
         .build()
 
-    val apiService: PfcApiService = Retrofit.Builder()
-        .baseUrl("https://portale-pfc-v2.vercel.app/")
-        .client(okHttpClient)
-        .addConverterFactory(MoshiConverterFactory.create(moshi))
-        .build()
-        .create(PfcApiService::class.java)
-
-    fun clearSession() {
-        prefs.edit().remove("saved_cookie").apply()
+    fun getBaseUrl(): String {
+        var url = prefs.getString("backend_base_url", "https://portale-pfc-v2.vercel.app/") ?: "https://portale-pfc-v2.vercel.app/"
+        if (!url.endsWith("/")) url += "/"
+        return url
     }
 
-    fun getSavedCookie(): String? = prefs.getString("saved_cookie", null)
+    fun setBaseUrl(newUrl: String) {
+        var url = newUrl.trim()
+        if (!url.endsWith("/")) url += "/"
+        prefs.edit().putString("backend_base_url", url).apply()
+    }
+
+    val apiService: PfcApiService
+        get() {
+            return Retrofit.Builder()
+                .baseUrl(getBaseUrl())
+                .client(okHttpClient)
+                .addConverterFactory(MoshiConverterFactory.create(moshi))
+                .build()
+                .create(PfcApiService::class.java)
+        }
+
+    fun clearSession() {
+        prefs.edit().remove("all_cookies").remove("saved_cookie").apply()
+    }
+
+    fun hasValidSession(): Boolean {
+        val cookies = prefs.getStringSet("all_cookies", emptySet()) ?: emptySet()
+        return cookies.isNotEmpty()
+    }
 }

@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -61,10 +63,11 @@ fun CassettoScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Vault Hero Card
+        // Vault Header Container
         Surface(
             color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp
+            tonalElevation = 2.dp,
+            shadowElevation = 2.dp
         ) {
             Column(
                 modifier = Modifier
@@ -72,61 +75,90 @@ fun CassettoScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Hero Banner
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp),
-                    color = GeoPrimaryContainer
+                // Vault Hero Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .shadow(4.dp, shape = RoundedCornerShape(22.dp)),
+                    shape = RoundedCornerShape(22.dp),
+                    colors = CardDefaults.cardColors(containerColor = PfcMidnight),
+                    border = BorderStroke(1.dp, PfcGold.copy(alpha = 0.4f))
                 ) {
-                    Row(
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(20.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(PfcMidnight, GeoPrimary, PfcMidnight)
+                                )
+                            )
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(18.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Lock,
-                                    contentDescription = null,
-                                    tint = GeoOnPrimaryContainer,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = "CASSETTO PERSONALE",
-                                    color = GeoOnPrimaryContainer,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    letterSpacing = 0.8.sp
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "I tuoi file protetti",
-                                color = GeoOnPrimaryContainer,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "${cassettoFiles.size} documenti archiviati in sicurezza",
-                                color = GeoOnPrimaryContainer.copy(alpha = 0.8f),
-                                fontSize = 12.sp
-                            )
-                        }
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .background(PfcGold.copy(alpha = 0.15f))
+                                        .border(1.dp, PfcGold.copy(alpha = 0.5f), RoundedCornerShape(14.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Lock,
+                                        contentDescription = null,
+                                        tint = PfcGold,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
 
-                        Button(
-                            onClick = onOpenAddDialog,
-                            colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
-                            shape = RoundedCornerShape(50),
-                            modifier = Modifier.testTag("add_to_cassetto_button")
-                        ) {
-                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Aggiungi", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Column {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "CASSETTO RISERVATO",
+                                            color = PfcGoldLight,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 10.sp,
+                                            letterSpacing = 0.8.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = "Caveau Documentale",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "${cassettoFiles.size} documenti archiviati con cifratura",
+                                        color = Color.White.copy(alpha = 0.75f),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+
+                            Button(
+                                onClick = onOpenAddDialog,
+                                colors = ButtonDefaults.buttonColors(containerColor = PfcGold),
+                                shape = RoundedCornerShape(50),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+                                modifier = Modifier.testTag("add_to_cassetto_button")
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = null, tint = PfcMidnight, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Aggiungi", color = PfcMidnight, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
                         }
                     }
                 }
@@ -146,10 +178,10 @@ fun CassettoScreen(
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = GeoPrimary,
                                 selectedLabelColor = Color.White,
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
                                 labelColor = MaterialTheme.colorScheme.onSurfaceVariant
                             ),
-                            border = null
+                            border = if (isSelected) BorderStroke(1.dp, PfcGold.copy(alpha = 0.6f)) else null
                         )
                     }
                 }
@@ -255,14 +287,15 @@ fun CassettoFileCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
             .clickable { onPreview() },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp)
+                .padding(16.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -309,9 +342,9 @@ fun CassettoFileCard(
                 CategoryPill(category = file.categoria)
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Action row
             Row(
@@ -319,23 +352,29 @@ fun CassettoFileCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(
-                    onClick = onPreview,
-                    contentPadding = PaddingValues(horizontal = 8.dp)
+                Surface(
+                    color = GeoPrimaryContainer,
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier.clickable { onPreview() }
                 ) {
-                    Icon(Icons.Outlined.Visibility, contentDescription = null, modifier = Modifier.size(16.dp), tint = GeoPrimary)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Anteprima", color = GeoPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(Icons.Outlined.Visibility, contentDescription = null, modifier = Modifier.size(16.dp), tint = GeoOnPrimaryContainer)
+                        Text("Anteprima", color = GeoOnPrimaryContainer, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
 
-                Row {
-                    IconButton(onClick = onDownload, modifier = Modifier.size(32.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = onDownload, modifier = Modifier.size(34.dp)) {
                         Icon(Icons.Outlined.Download, contentDescription = "Scarica", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = onRename, modifier = Modifier.size(32.dp)) {
+                    IconButton(onClick = onRename, modifier = Modifier.size(34.dp)) {
                         Icon(Icons.Outlined.Edit, contentDescription = "Rinomina", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     }
-                    IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
                         Icon(Icons.Outlined.Delete, contentDescription = "Elimina", tint = PfcDanger, modifier = Modifier.size(18.dp))
                     }
                 }
@@ -458,4 +497,3 @@ fun RenameCassettoDialog(
         }
     )
 }
-

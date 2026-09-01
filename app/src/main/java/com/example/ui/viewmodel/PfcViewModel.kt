@@ -2,6 +2,7 @@ package com.example.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.entity.*
@@ -10,12 +11,14 @@ import com.example.data.repository.PfcRepository
 import com.example.notification.LocalNotificationHelper
 import com.example.notification.ReminderScheduler
 import com.google.firebase.messaging.FirebaseMessaging
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.io.File
 
 class PfcViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = PfcRepository(application)
+    val repository = PfcRepository(application)
     private val prefs = application.getSharedPreferences("pfc_app_settings", Context.MODE_PRIVATE)
 
     // === Onboarding & Auth State ===
@@ -58,7 +61,7 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
 
     // === Archivio State ===
-    private val _years = MutableStateFlow<List<String>>(listOf("2025", "2024", "2023", "2022"))
+    private val _years = MutableStateFlow<List<String>>(listOf("2025"))
     val years: StateFlow<List<String>> = _years.asStateFlow()
 
     private val _selectedYear = MutableStateFlow("2025")
@@ -90,6 +93,9 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _selectedBatchKeys = MutableStateFlow<Set<String>>(emptySet())
     val selectedBatchKeys: StateFlow<Set<String>> = _selectedBatchKeys.asStateFlow()
+
+    private val _archivioViewMode = MutableStateFlow(0) // 0: Cartelle, 1: Tutti i File
+    val archivioViewMode: StateFlow<Int> = _archivioViewMode.asStateFlow()
 
     // === Messaggi State ===
     private val _messaggiTab = MutableStateFlow(0) // 0: Attivi, 1: Archiviati
@@ -155,22 +161,26 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         if (ReminderScheduler.isRemindersEnabled(application)) {
             ReminderScheduler.scheduleReminders(application)
         }
-        // Initialize FCM registration token asynchronously in background without blocking UI
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+
+        // Register FCM device token on backend
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 FirebaseMessaging.getInstance().token
                     .addOnSuccessListener { token ->
-                        android.util.Log.d("PfcViewModel", "FCM Device Token: $token")
+                        viewModelScope.launch(Dispatchers.IO) {
+                            repository.registerFcmToken(token)
+                        }
                     }
                     .addOnFailureListener { e ->
-                        android.util.Log.i("PfcViewModel", "Firebase push not active on current device/emulator, local reminders active: ${e.message}")
+                        android.util.Log.i("PfcViewModel", "Firebase push not active on emulator/device: ${e.message}")
                     }
             } catch (e: Throwable) {
                 android.util.Log.i("PfcViewModel", "Firebase messaging init skipped: ${e.message}")
             }
         }
+
         if (_isLoggedIn.value) {
-            refreshArchivio()
+            syncAllData()
         }
     }
 
@@ -194,7 +204,17 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
                 _currentUser.value = u
                 _isLoggedIn.value = true
                 _loginLoading.value = false
-                refreshArchivio()
+                
+                // Re-register FCM token on server with authenticated user session
+                try {
+                    FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                        viewModelScope.launch(Dispatchers.IO) {
+                            repository.registerFcmToken(token)
+                        }
+                    }
+                } catch (_: Throwable) {}
+
+                syncAllData()
                 showSnackbar("Benvenuto, ${u.name}!")
             }.onFailure { err ->
                 _loginLoading.value = false
@@ -214,12 +234,35 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun syncAllData() {
+        viewModelScope.launch {
+            refreshArchivio()
+            repository.syncMessaggi()
+            repository.syncCassetto()
+            repository.syncNotifiche()
+            repository.syncAuditLogs()
+        }
+    }
+
     fun setTab(index: Int) {
         _selectedTab.value = index
+        viewModelScope.launch {
+            when (index) {
+                0 -> refreshArchivio()
+                1 -> repository.syncMessaggi()
+                2 -> repository.syncCassetto()
+                3 -> repository.syncAuditLogs()
+            }
+        }
     }
 
     fun setShowNotifSheet(show: Boolean) {
         _showNotifSheet.value = show
+        if (show) {
+            viewModelScope.launch {
+                repository.syncNotifiche()
+            }
+        }
     }
 
     fun setShowSettingsSheet(show: Boolean) {
@@ -233,8 +276,45 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         _previewFile.value = file
         if (file != null) {
             viewModelScope.launch {
-                repository.logAction("preview", "Aperta anteprima: ${file.nome}")
+                repository.markDocumentVisto(file)
+                _files.value = _files.value.map {
+                    if (it.key == file.key && it.stato == "nuovo") it.copy(stato = "visto") else it
+                }
+                val updatedFolders = repository.getCartelle(_selectedYear.value)
+                if (updatedFolders.isNotEmpty()) _cartelle.value = updatedFolders
             }
+        }
+    }
+
+    fun downloadDocument(file: FileItem) {
+        viewModelScope.launch {
+            repository.markDocumentScaricato(file)
+            _files.value = _files.value.map {
+                if (it.key == file.key) it.copy(stato = "scaricato") else it
+            }
+            val updatedFolders = repository.getCartelle(_selectedYear.value)
+            if (updatedFolders.isNotEmpty()) _cartelle.value = updatedFolders
+            showSnackbar("Download avviato: ${file.nome}")
+        }
+    }
+
+    fun setArchivioViewMode(mode: Int) {
+        _archivioViewMode.value = mode
+        _selectedCartella.value = null
+        _selectedBatchKeys.value = emptySet()
+        if (mode == 1) {
+            loadAllDocumentsForYear(_selectedYear.value)
+        } else {
+            refreshArchivio()
+        }
+    }
+
+    fun loadAllDocumentsForYear(year: String) {
+        viewModelScope.launch {
+            _filesLoading.value = true
+            val fList = repository.getAllDocumentsForYear(year)
+            _files.value = fList
+            _filesLoading.value = false
         }
     }
 
@@ -266,7 +346,7 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         _selectedYear.value = year
         _selectedCartella.value = null
         _selectedBatchKeys.value = emptySet()
-        refreshArchivio()
+        refreshArchivio(forcedYear = year)
     }
 
     fun selectCartella(cartella: Cartella?) {
@@ -277,18 +357,23 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun refreshArchivio() {
+    fun refreshArchivio(forcedYear: String? = null) {
         viewModelScope.launch {
             _filesLoading.value = true
-            val yrList = repository.getAvailableYears()
-            _years.value = yrList
-            val currentYr = _selectedYear.value
-            val folders = repository.getCartelle(currentYr)
+            val targetYr = forcedYear ?: _selectedYear.value.ifEmpty { null }
+            val (serverYears, folders, _) = repository.fetchArchivioData(targetYr)
+
+            if (serverYears.isNotEmpty()) {
+                _years.value = serverYears
+                if (_selectedYear.value.isEmpty() || !serverYears.contains(_selectedYear.value)) {
+                    _selectedYear.value = if (targetYr != null && serverYears.contains(targetYr)) targetYr else serverYears.first()
+                }
+            }
             _cartelle.value = folders
 
             val currentFolder = _selectedCartella.value
-            if (currentFolder != null) {
-                loadFilesForCartella(currentYr, currentFolder.nome)
+            if (currentFolder != null && folders.any { it.nome == currentFolder.nome }) {
+                loadFilesForCartella(_selectedYear.value, currentFolder.nome)
             } else {
                 _filesLoading.value = false
             }
@@ -349,11 +434,19 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun downloadBatchSelected() {
-        val count = _selectedBatchKeys.value.size
+        val keys = _selectedBatchKeys.value
+        val count = keys.size
         viewModelScope.launch {
+            keys.forEach { key ->
+                val file = _files.value.find { it.key == key }
+                if (file != null) repository.markDocumentScaricato(file)
+            }
+            _files.value = _files.value.map {
+                if (keys.contains(it.key)) it.copy(stato = "scaricato") else it
+            }
             repository.logAction("download_batch", "Scaricati $count documenti in blocco")
             clearBatchSelection()
-            showSnackbar("$count documenti scaricati con successo")
+            showSnackbar("$count documenti salvati con successo")
         }
     }
 
@@ -381,8 +474,12 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
 
     fun submitUploadReply(msgId: String, fileName: String) {
         viewModelScope.launch {
-            repository.uploadRispostaMessaggio(msgId, fileName)
-            showSnackbar("File inviato allo studio con successo!")
+            val app = getApplication<Application>()
+            val cacheFile = File(app.cacheDir, fileName).apply {
+                if (!exists()) writeText("Allegato risposta messaggio #$msgId")
+            }
+            repository.uploadRispostaMessaggio(msgId, cacheFile)
+            showSnackbar("Risposta e file inviati allo studio con successo!")
         }
     }
 
@@ -391,9 +488,13 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
     fun addCassettoDocument(name: String, category: String) {
         if (name.isBlank()) return
         viewModelScope.launch {
-            repository.addCassettoFile(name.trim(), category)
+            val app = getApplication<Application>()
+            val cacheFile = File(app.cacheDir, name).apply {
+                if (!exists()) writeText("Documento personale cassetto: $name")
+            }
+            repository.uploadCassettoFile(cacheFile, category)
             _showAddCassetto.value = false
-            showSnackbar("Documento aggiunto al cassetto!")
+            showSnackbar("Documento caricato nel cassetto!")
         }
     }
 
@@ -431,7 +532,7 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
     fun clearNotificheLette() {
         viewModelScope.launch {
             repository.clearNotificheLette()
-            showSnackbar("Notifiche lette eliminate")
+            showSnackbar("Notifiche eliminate")
         }
     }
 
@@ -449,7 +550,7 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
             _fcmTesting.value = true
             val res = repository.sendTestFcm()
             _fcmTesting.value = false
-            showSnackbar(res.msg ?: "Notifica inviata al telefono")
+            showSnackbar(res.msg ?: "Notifica push richiesta al backend")
         }
     }
 
@@ -492,24 +593,14 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         showSnackbar("Frequenza impostata su: ${getIntervalLabel(minutes)}")
     }
 
-    fun getIntervalLabel(minutes: Int): String {
-        return when (minutes) {
-            15 -> "Ogni 15 Minuti (Demo / Frequente)"
-            60 -> "Ogni Ora"
-            360 -> "Ogni 6 Ore"
-            1440 -> "Una volta al Giorno"
-            else -> "$minutes Minuti"
-        }
-    }
-
     fun triggerTestDocumentNotification() {
         val app = getApplication<Application>()
         LocalNotificationHelper.showNewDocumentNotification(
             context = app,
-            docTitle = "Modello F24 - Febbraio 2025 (Tributi e Contributi)",
+            docTitle = "Modello F24 - Versamento Tributi e Contributi",
             folderName = "F24 e Versamenti",
-            year = "2025",
-            docKey = "2025/F24/F24_Febbraio_2025.pdf"
+            year = _selectedYear.value,
+            docKey = "${_selectedYear.value}/F24/F24_Versamento.pdf"
         )
         showSnackbar("Notifica locale 'Nuovo Documento' inviata!")
     }
@@ -518,10 +609,10 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         val app = getApplication<Application>()
         LocalNotificationHelper.showNewMessageNotification(
             context = app,
-            messageId = "msg-101",
-            title = "Richiesta Estratti Conto e Fatture Q4",
-            corpo = "Gentile cliente, si prega di caricare gli estratti conto per la chiusura contabile.",
-            requiresUpload = true
+            messageId = "msg-${System.currentTimeMillis()}",
+            title = "Comunicazione dallo Studio PFC",
+            corpo = "Gentile cliente, sono disponibili nuovi documenti nella tua area riservata.",
+            requiresUpload = false
         )
         showSnackbar("Notifica locale 'Messaggio Studio' inviata!")
     }
@@ -530,57 +621,28 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         val app = getApplication<Application>()
         LocalNotificationHelper.showDeadlineReminderNotification(
             context = app,
-            deadlineTitle = "Versamento Saldo IVA e Ritenute F24",
-            scadenzaDate = "16 Marzo 2025",
-            detail = "Il modello F24 telematico è disponibile nell'archivio fiscale del tuo portale."
+            deadlineTitle = "Scadenza Tributaria F24",
+            scadenzaDate = "16 del mese",
+            detail = "Verifica gli adempimenti predisposti dal tuo commercialista nell'archivio."
         )
         showSnackbar("Notifica locale 'Promemoria Scadenza' inviata!")
+    }
+
+    fun getIntervalLabel(minutes: Int): String {
+        return when (minutes) {
+            15 -> "Ogni 15 Minuti"
+            60 -> "Ogni Ora"
+            360 -> "Ogni 6 Ore"
+            1440 -> "Una volta al Giorno"
+            else -> "$minutes Minuti"
+        }
     }
 
     fun triggerPeriodicCheckNow() {
         val app = getApplication<Application>()
         ReminderScheduler.triggerImmediateCheck(app)
-        showSnackbar("Verifica promemoria eseguita!")
-    }
-
-    fun simulateIncomingStudioDocument() {
-        viewModelScope.launch {
-            val sampleDoc = repository.simulateStudioDocumentUpload(
-                title = "Modello F24 - Saldo IVA e Ritenute Trimestre (${System.currentTimeMillis().toString().takeLast(4)})",
-                folder = "F24 e Versamenti",
-                year = _selectedYear.value
-            )
-            refreshArchivio()
-            val app = getApplication<Application>()
-            LocalNotificationHelper.showNewDocumentNotification(
-                context = app,
-                docTitle = sampleDoc.nome,
-                folderName = sampleDoc.cartella,
-                year = sampleDoc.anno,
-                docKey = sampleDoc.key
-            )
-            showSnackbar("Nuovo documento caricato dallo Studio con notifica!")
-        }
-    }
-
-    fun simulateIncomingStudioMessage() {
-        viewModelScope.launch {
-            val sampleMsg = repository.simulateStudioMessage(
-                title = "Richiesta Documentazione Contabile (${System.currentTimeMillis().toString().takeLast(4)})",
-                body = "Gentile cliente, si richiede l'invio del file contabile per il perfezionamento della dichiarazione periodica.",
-                requiresUpload = true,
-                uploadDesc = "Ricevuta contabile / File PDF"
-            )
-            val app = getApplication<Application>()
-            LocalNotificationHelper.showNewMessageNotification(
-                context = app,
-                messageId = sampleMsg.id,
-                title = sampleMsg.titolo,
-                corpo = sampleMsg.corpo,
-                requiresUpload = sampleMsg.richiedeUpload
-            )
-            showSnackbar("Nuovo messaggio inviato dallo Studio con notifica!")
-        }
+        syncAllData()
+        showSnackbar("Sincronizzazione e verifica promemoria eseguita!")
     }
 
     fun handleNotificationIntent(

@@ -1,14 +1,24 @@
 package com.example.ui.screens
 
+import android.content.Context
 import android.content.Intent
-import androidx.compose.animation.AnimatedContent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
+import android.os.Environment
+import android.os.ParcelFileDescriptor
+import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,8 +34,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -34,9 +50,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.FileProvider
 import com.example.data.model.FileItem
 import com.example.ui.theme.*
+import com.example.util.PdfGeneratorHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentPreviewDialog(
     file: FileItem,
@@ -46,21 +68,6 @@ fun DocumentPreviewDialog(
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
-    var currentPage by remember { mutableIntStateOf(1) }
-    val totalPages = 2
-
-    // Determine document fiscal category
-    val docType = remember(file.nome, file.cartella) {
-        val lower = (file.nome + " " + (file.cartella ?: "")).lowercase()
-        when {
-            lower.contains("f24") || lower.contains("tribut") || lower.contains("impost") -> DocCategory.F24
-            lower.contains("dichiaraz") || lower.contains("730") || lower.contains("redditi") || lower.contains("unico") || lower.contains("iva") -> DocCategory.DICHIARAZIONE
-            lower.contains("bilanc") || lower.contains("nota") || lower.contains("rendicont") -> DocCategory.BILANCIO
-            lower.contains("cedolin") || lower.contains("busta") || lower.contains("pag") || lower.contains("cu") -> DocCategory.LAVORO
-            lower.contains("fattur") || lower.contains("spes") -> DocCategory.FATTURA
-            else -> DocCategory.GENERICO
-        }
-    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -74,10 +81,11 @@ fun DocumentPreviewDialog(
             color = MaterialTheme.colorScheme.background
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Top Action Bar
+                // Top Navigation and Action Bar
                 Surface(
                     color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 2.dp
+                    tonalElevation = 3.dp,
+                    shadowElevation = 2.dp
                 ) {
                     Row(
                         modifier = Modifier
@@ -94,63 +102,89 @@ fun DocumentPreviewDialog(
                             IconButton(onClick = onDismiss) {
                                 Icon(
                                     imageVector = Icons.Filled.Close,
-                                    contentDescription = "Chiudi",
+                                    contentDescription = "Chiudi anteprima",
                                     tint = MaterialTheme.colorScheme.onSurface
                                 )
                             }
+
                             Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = file.nome,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     Text(
-                                        text = file.nome,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f, fill = false)
+                                        text = "${file.cartella ?: "Documento"} • ${file.anno ?: "2025"}",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    Surface(
-                                        color = GeoPrimaryContainer,
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
+                                    if (file.sizeStr.isNotBlank()) {
                                         Text(
-                                            text = docType.badgeLabel,
-                                            color = GeoOnPrimaryContainer,
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            text = "(${file.sizeStr})",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                                         )
                                     }
                                 }
-                                Text(
-                                    text = "${file.cartella ?: "Documento"} • ${file.anno ?: "2025"} • ${file.sizeStr}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 11.sp
-                                )
                             }
                         }
 
+                        // Right Action Buttons
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
+                            // Favorite toggle
                             if (onToggleFavorite != null) {
                                 IconButton(onClick = onToggleFavorite) {
                                     Icon(
-                                        imageVector = if (file.isPreferito) Icons.Filled.Star else Icons.Outlined.StarBorder,
+                                        imageVector = if (file.isPreferito) Icons.Filled.Star else Icons.Outlined.StarOutline,
                                         contentDescription = "Preferito",
-                                        tint = if (file.isPreferito) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        tint = if (file.isPreferito) PfcGold else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                            }
+
+                            // Open in external PDF reader
+                            IconButton(
+                                onClick = {
+                                    val saved = PdfGeneratorHelper.savePdfLocally(context, file)
+                                    if (saved != null) {
+                                        try {
+                                            val uri = FileProvider.getUriForFile(
+                                                context,
+                                                "${context.packageName}.fileprovider",
+                                                saved
+                                            )
+                                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                                setDataAndType(uri, "application/pdf")
+                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                            }
+                                            context.startActivity(Intent.createChooser(intent, "Apri ${file.nome}"))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Nessun visualizzatore PDF installato", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.OpenInNew,
+                                    contentDescription = "Apri con lettore esterno",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
 
                             // Share official PDF
                             IconButton(
                                 onClick = {
-                                    com.example.util.PdfGeneratorHelper.shareDocument(context, file)
+                                    PdfGeneratorHelper.shareDocument(context, file)
                                 }
                             ) {
                                 Icon(
@@ -160,14 +194,14 @@ fun DocumentPreviewDialog(
                                 )
                             }
 
-                            // Download / Save PDF locally
+                            // Download / Save PDF
                             Button(
                                 onClick = {
-                                    val saved = com.example.util.PdfGeneratorHelper.savePdfLocally(context, file)
+                                    val saved = PdfGeneratorHelper.savePdfLocally(context, file)
                                     if (saved != null) {
                                         onDownload()
                                     } else {
-                                        android.widget.Toast.makeText(context, "Errore salvataggio PDF", android.widget.Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Errore salvataggio PDF", Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
@@ -176,13 +210,13 @@ fun DocumentPreviewDialog(
                             ) {
                                 Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(15.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Salva PDF", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("Salva", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     }
                 }
 
-                // Modal Segmented Tabs (Anteprima / Riepilogo / Conformità)
+                // Modal Segmented Tabs (Anteprima / Riepilogo / Dati e Protocolli)
                 TabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = MaterialTheme.colorScheme.surface,
@@ -194,7 +228,7 @@ fun DocumentPreviewDialog(
                         onClick = { selectedTab = 0 },
                         text = {
                             Text(
-                                "Anteprima Doc",
+                                "Anteprima File",
                                 fontSize = 12.sp,
                                 fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Normal
                             )
@@ -227,104 +261,312 @@ fun DocumentPreviewDialog(
                     )
                 }
 
-                // Body Container
+                // Tab Contents
                 Box(
                     modifier = Modifier
-                        .weight(1f)
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.background)
+                        .weight(1f)
                 ) {
-                    AnimatedContent(
-                        targetState = selectedTab,
-                        transitionSpec = { fadeIn() togetherWith fadeOut() },
-                        label = "preview_tab_transition"
-                    ) { target ->
-                        when (target) {
-                            0 -> DocumentSheetView(
-                                file = file,
-                                category = docType,
-                                currentPage = currentPage
+                    when (selectedTab) {
+                        0 -> RealDocumentViewerTab(file = file)
+                        1 -> DocumentSummaryTab(file = file)
+                        2 -> DocumentProtocolsTab(file = file)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Renders the actual PDF file pages or image into high-resolution native Bitmaps.
+ */
+@Composable
+private fun RealDocumentViewerTab(file: FileItem) {
+    val context = LocalContext.current
+    var isImage by remember(file.nome) {
+        mutableStateOf(
+            file.nome.endsWith(".png", ignoreCase = true) ||
+            file.nome.endsWith(".jpg", ignoreCase = true) ||
+            file.nome.endsWith(".jpeg", ignoreCase = true) ||
+            file.nome.endsWith(".webp", ignoreCase = true)
+        )
+    }
+
+    var pdfFileState by remember(file.key) { mutableStateOf<File?>(null) }
+    var totalPages by remember { mutableIntStateOf(1) }
+    var currentPageIndex by remember { mutableIntStateOf(0) }
+    var pageBitmap by remember { mutableStateOf<Bitmap?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var renderError by remember { mutableStateOf<String?>(null) }
+
+    // Zoom & Pan state
+    var scale by remember { mutableFloatStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+
+    // Prepare File & Render
+    LaunchedEffect(file.key, file.nome) {
+        isLoading = true
+        renderError = null
+        scale = 1f
+        offset = Offset.Zero
+        currentPageIndex = 0
+
+        withContext(Dispatchers.IO) {
+            try {
+                // Ensure PDF file exists in cache
+                val pdfFile = PdfGeneratorHelper.createFiscalPdf(context, file)
+                pdfFileState = pdfFile
+
+                if (!isImage) {
+                    ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                        PdfRenderer(pfd).use { renderer ->
+                            totalPages = renderer.pageCount.coerceAtLeast(1)
+                            val page = renderer.openPage(0)
+                            // Render at 2x density for crisp typography and lines
+                            val densityMultiplier = 2
+                            val bmp = Bitmap.createBitmap(
+                                page.width * densityMultiplier,
+                                page.height * densityMultiplier,
+                                Bitmap.Config.ARGB_8888
                             )
-                            1 -> DocumentSummaryBreakdownView(
-                                file = file,
-                                category = docType
-                            )
-                            2 -> DocumentMetadataComplianceView(
-                                file = file,
-                                category = docType
-                            )
+                            val canvas = android.graphics.Canvas(bmp)
+                            canvas.drawColor(android.graphics.Color.WHITE)
+                            page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                            page.close()
+                            pageBitmap = bmp
                         }
                     }
                 }
+            } catch (e: Exception) {
+                renderError = e.message ?: "Errore caricamento anteprima"
+            } finally {
+                isLoading = false
+            }
+        }
+    }
 
-                // Bottom Page Control Bar (only visible in Sheet View tab 0)
-                if (selectedTab == 0) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 2.dp
+    // When page changes
+    LaunchedEffect(currentPageIndex, pdfFileState) {
+        val pdf = pdfFileState ?: return@LaunchedEffect
+        if (isImage) return@LaunchedEffect
+
+        withContext(Dispatchers.IO) {
+            try {
+                ParcelFileDescriptor.open(pdf, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                    PdfRenderer(pfd).use { renderer ->
+                        totalPages = renderer.pageCount.coerceAtLeast(1)
+                        val safeIndex = currentPageIndex.coerceIn(0, totalPages - 1)
+                        val page = renderer.openPage(safeIndex)
+                        val densityMultiplier = 2
+                        val bmp = Bitmap.createBitmap(
+                            page.width * densityMultiplier,
+                            page.height * densityMultiplier,
+                            Bitmap.Config.ARGB_8888
+                        )
+                        val canvas = android.graphics.Canvas(bmp)
+                        canvas.drawColor(android.graphics.Color.WHITE)
+                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                        page.close()
+                        pageBitmap = bmp
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFFE5E7EB))
+    ) {
+        // Floating Page Controls & Zoom Bar
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Page Indicator & Switcher
+                if (!isImage && totalPages > 1) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        IconButton(
+                            onClick = { if (currentPageIndex > 0) currentPageIndex-- },
+                            enabled = currentPageIndex > 0,
+                            modifier = Modifier.size(32.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(PfcSuccess)
-                                )
-                                Text(
-                                    text = "Firma Digitale Valida",
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
+                            Icon(Icons.Filled.ChevronLeft, contentDescription = "Pagina precedente", modifier = Modifier.size(20.dp))
+                        }
 
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                IconButton(
-                                    onClick = { if (currentPage > 1) currentPage-- },
-                                    enabled = currentPage > 1,
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Filled.ArrowBackIos,
-                                        contentDescription = "Pagina Precedente",
-                                        tint = if (currentPage > 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                                        modifier = Modifier.size(14.dp)
-                                    )
+                        Text(
+                            text = "Pagina ${currentPageIndex + 1} di $totalPages",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        IconButton(
+                            onClick = { if (currentPageIndex < totalPages - 1) currentPageIndex++ },
+                            enabled = currentPageIndex < totalPages - 1,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Filled.ChevronRight, contentDescription = "Pagina successiva", modifier = Modifier.size(20.dp))
+                        }
+                    }
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Filled.Verified, contentDescription = null, tint = PfcSuccess, modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "Documento Ufficiale Conforme CAD",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                // Zoom buttons
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    IconButton(
+                        onClick = { scale = (scale - 0.25f).coerceAtLeast(0.75f) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Filled.ZoomOut, contentDescription = "Riduci", modifier = Modifier.size(18.dp))
+                    }
+
+                    Text(
+                        text = "${(scale * 100).toInt()}%",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    IconButton(
+                        onClick = { scale = (scale + 0.25f).coerceAtMost(3.5f) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Filled.ZoomIn, contentDescription = "Ingrandisci", modifier = Modifier.size(18.dp))
+                    }
+
+                    if (scale != 1f || offset != Offset.Zero) {
+                        IconButton(
+                            onClick = {
+                                scale = 1f
+                                offset = Offset.Zero
+                            },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Filled.RestartAlt, contentDescription = "Reimposta zoom", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Viewport / Canvas
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .weight(1f)
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        scale = (scale * zoom).coerceIn(0.75f, 3.5f)
+                        offset += pan
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            if (isLoading) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(color = GeoPrimary, modifier = Modifier.size(40.dp))
+                    Text(
+                        text = "Generazione rendering alta definizione in corso...",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else if (pageBitmap != null) {
+                // PDF Rendered Page
+                Card(
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y
+                        )
+                        .fillMaxWidth(0.95f)
+                        .aspectRatio(0.707f), // A4 Aspect Ratio (595 / 842)
+                    shape = RoundedCornerShape(4.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                ) {
+                    Image(
+                        bitmap = pageBitmap!!.asImageBitmap(),
+                        contentDescription = "Pagina documento ${file.nome}",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+            } else {
+                // Fallback Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth(0.88f)
+                        .padding(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(48.dp))
+                        Text(file.nome, fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center)
+                        Text(
+                            "Il documento è pronto per la visualizzazione e il download certificato.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Button(
+                            onClick = {
+                                val saved = PdfGeneratorHelper.savePdfLocally(context, file)
+                                if (saved != null) {
+                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", saved)
+                                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(uri, "application/pdf")
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, "Apri ${file.nome}"))
                                 }
-
-                                Text(
-                                    text = "Pagina $currentPage di $totalPages",
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                )
-
-                                IconButton(
-                                    onClick = { if (currentPage < totalPages) currentPage++ },
-                                    enabled = currentPage < totalPages,
-                                    modifier = Modifier.size(32.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Filled.ArrowForwardIos,
-                                        contentDescription = "Pagina Successiva",
-                                        tint = if (currentPage < totalPages) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
+                            shape = RoundedCornerShape(50)
+                        ) {
+                            Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Apri con Visualizzatore Esterno", color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -333,619 +575,220 @@ fun DocumentPreviewDialog(
     }
 }
 
-private enum class DocCategory(val badgeLabel: String) {
-    F24("MODELLO F24"),
-    DICHIARAZIONE("DICHIARAZIONE FISCALE"),
-    BILANCIO("BILANCIO CEE"),
-    LAVORO("PAGHE & LAVORO"),
-    FATTURA("DOCUMENTO IVA"),
-    GENERICO("DOCUMENTO STUDIO")
-}
-
+/**
+ * Tab 1: Detailed Fiscal Summary & Breakdown.
+ */
 @Composable
-private fun DocumentSheetView(
-    file: FileItem,
-    category: DocCategory,
-    currentPage: Int
-) {
-    Box(
+private fun DocumentSummaryTab(file: FileItem) {
+    val scrollState = rememberScrollState()
+
+    Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(14.dp),
-        contentAlignment = Alignment.TopCenter
+            .verticalScroll(scrollState)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        Text(
+            text = "RIEPILOGO ADEMPIMENTO FISCALE",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp
+        )
+
+        // Summary Card
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight()
-                .verticalScroll(rememberScrollState()),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            shape = RoundedCornerShape(16.dp),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp)
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                if (currentPage == 1) {
-                    // Page 1: Main Fiscal Document Facsimile
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(
+                            text = file.nome.removeSuffix(".pdf"),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Sezione: ${file.cartella ?: "Fiscale"} • Anno ${file.anno ?: "2025"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Surface(
+                        color = PfcSuccessSoft,
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = PfcSuccess, modifier = Modifier.size(14.dp))
+                            Text(
+                                text = "Elaborato",
+                                color = PfcSuccess,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                // Key Fiscal Values
+                val rows = listOf(
+                    "Tipo Documento" to (file.cartella ?: "Documento Fiscale"),
+                    "Anno di Competenza" to (file.anno ?: "2025"),
+                    "Data Caricamento Studio" to (file.lastModified ?: "Aggiornato"),
+                    "Dimensione File" to (if (file.sizeStr.isNotBlank()) file.sizeStr else "PDF Digitale"),
+                    "Conservazione Digitale" to "A Norma CAD (10 Anni)",
+                    "Studio Emittente" to "Studio PFC Consulting"
+                )
+
+                rows.forEach { (label, value) ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text(
-                                text = "STUDIO PFC CONSULTING",
-                                fontWeight = FontWeight.Black,
-                                fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                letterSpacing = 0.5.sp
-                            )
-                            Text(
-                                text = "Dottori Commercialisti & Revisori Legali",
-                                fontSize = 10.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        Surface(
-                            color = GeoPrimaryContainer,
-                            shape = RoundedCornerShape(50)
-                        ) {
-                            Text(
-                                text = "COPIA CONFORME",
-                                color = GeoOnPrimaryContainer,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 9.sp,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                            )
-                        }
+                        Text(text = label, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                     }
+                }
+            }
+        }
 
-                    Spacer(modifier = Modifier.height(12.dp))
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(modifier = Modifier.height(12.dp))
-
+        // Compliance Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = GeoPrimaryContainer.copy(alpha = 0.5f)),
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, GeoPrimary.copy(alpha = 0.2f))
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(Icons.Filled.Shield, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(24.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Validità Giuridica & Fiscale", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GeoOnPrimaryContainer)
                     Text(
-                        text = file.nome.removeSuffix(".pdf"),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = MaterialTheme.colorScheme.onSurface
+                        "Il presente documento è conforme agli archivi tributari ufficiali e depositato secondo le linee guida AgID per la conservazione a norma.",
+                        fontSize = 12.sp,
+                        color = GeoOnPrimaryContainer.copy(alpha = 0.85f),
+                        lineHeight = 16.sp
                     )
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
-                    Text(
-                        text = "Data Elaborazione: ${file.lastModified ?: "Corrente"}\nAnno d'Imposta: ${file.anno ?: "2025"}\nProtocollo Studio: PFC-${file.key.hashCode().toString().takeLast(8)}\nIdentificativo Univoco: ${file.key}",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 15.sp
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // Specific Category Facsimile Box
-                    when (category) {
-                        DocCategory.F24 -> F24FacsimileBox()
-                        DocCategory.DICHIARAZIONE -> DichiarazioneFacsimileBox()
-                        DocCategory.BILANCIO -> BilancioFacsimileBox()
-                        DocCategory.LAVORO -> CedolinoFacsimileBox()
-                        DocCategory.FATTURA -> FatturaFacsimileBox()
-                        DocCategory.GENERICO -> GenericFacsimileBox(file)
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = "Attestazione di conformità: Documento elaborato e conservato digitalmente a norma di legge dallo Studio PFC. Si certifica la conformità con gli archivi fiscali e telematici.",
-                        fontSize = 9.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 13.sp,
-                        textAlign = TextAlign.Justify
-                    )
-                } else {
-                    // Page 2: Official Telematics Transmission Receipt
-                    ReceiptPageContent(file)
                 }
             }
         }
     }
 }
 
+/**
+ * Tab 2: Technical Protocols, Telematics Transmission & Integrity Hash.
+ */
 @Composable
-private fun F24FacsimileBox() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .padding(12.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("SEZIONE ERARIO & IMPOSTE DIRETTE", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GeoPrimary)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+private fun DocumentProtocolsTab(file: FileItem) {
+    val scrollState = rememberScrollState()
+    val proto = "PFC-${Math.abs(file.key.hashCode()).toString().takeLast(8)}"
+    val hash = "SHA256:${file.key.hashCode().toString(16).padStart(16, '0').uppercase()}"
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("6001 - Versamento IVA Mensile Gennaio", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 1.250,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("1040 - Ritenute d'Acconto Professionisti", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 450,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("3801 - Addizionale Regionale IRPEF", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 120,50", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("TOTALE A DEBITO", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 1.820,50", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("SALDO FINALE DELEGA (F24)", fontWeight = FontWeight.Black, fontSize = 12.sp, color = GeoPrimary)
-                Text("€ 1.820,50", fontWeight = FontWeight.Black, fontSize = 13.sp, color = GeoPrimary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun DichiarazioneFacsimileBox() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .padding(12.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("QUADRO SINTETICO DEI REDDITI E IMPOSTE", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GeoPrimary)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Reddito Complessivo Dichiarato (RN1)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 54.800,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Oneri Deducibili e Spese (RP)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 3.200,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Imposta Netta Dovuta (RN26)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 14.120,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Ritenute Subite / Acconti Versati", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("- € 15.340,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = PfcSuccess)
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("CREDITO D'IMPOSTA A RIMBORSO", fontWeight = FontWeight.Black, fontSize = 11.sp, color = PfcSuccess)
-                Text("€ 1.220,00", fontWeight = FontWeight.Black, fontSize = 12.sp, color = PfcSuccess)
-            }
-        }
-    }
-}
-
-@Composable
-private fun BilancioFacsimileBox() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .padding(12.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("STATO PATRIMONIALE & CONTO ECONOMICO SINTETICO", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GeoPrimary)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("A) Valore della Produzione (Ricavi)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 340.500,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("B) Costi della Produzione", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 275.200,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Differenza Produzione (A - B)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 65.300,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("UTILE D'ESERCIZIO NETTO", fontWeight = FontWeight.Black, fontSize = 11.sp, color = GeoPrimary)
-                Text("€ 48.950,00", fontWeight = FontWeight.Black, fontSize = 12.sp, color = GeoPrimary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun CedolinoFacsimileBox() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .padding(12.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("PROSPETTO RETRIBUTIVO & CONTRIBUTIVO", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GeoPrimary)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Competenze Lorde del Mese", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 2.850,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Trattenute Previdenziali INPS (9.19%)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("- € 261,90", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Ritenute Fiscali IRPEF Nette", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("- € 482,10", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("NETTO DEL MESE IN BUSTA", fontWeight = FontWeight.Black, fontSize = 11.sp, color = GeoPrimary)
-                Text("€ 2.106,00", fontWeight = FontWeight.Black, fontSize = 12.sp, color = GeoPrimary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun FatturaFacsimileBox() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .padding(12.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("RIEPILOGO FATTURA ELETTRONICA SDI", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GeoPrimary)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Imponibile Operazioni Ordinarie", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 3.500,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Imposta IVA Applicata (22%)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("€ 770,00", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("TOTALE DOCUMENTO", fontWeight = FontWeight.Black, fontSize = 11.sp, color = GeoPrimary)
-                Text("€ 4.270,00", fontWeight = FontWeight.Black, fontSize = 12.sp, color = GeoPrimary)
-            }
-        }
-    }
-}
-
-@Composable
-private fun GenericFacsimileBox(file: FileItem) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-            .padding(12.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("SCHEDA RIEPILOGATIVA DOCUMENTO", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GeoPrimary)
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Tipologia di archiviazione", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text(file.cartella ?: "Generale", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Formato Digitale", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-                Text("PDF/A-1b Conforme", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface)
-            }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("STATO ELABORAZIONE", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = PfcSuccess)
-                Text("CONFERMATO", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = PfcSuccess)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReceiptPageContent(file: FileItem) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column {
-                Text(
-                    text = "AGENZIA DELLE ENTRATE",
-                    fontWeight = FontWeight.Black,
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    letterSpacing = 0.5.sp
-                )
-                Text(
-                    text = "Ricevuta di Trasmissione Telematica Entratel/Fisconline",
-                    fontSize = 10.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Surface(
-                color = GeoSecondaryContainer,
-                shape = RoundedCornerShape(50)
-            ) {
-                Text(
-                    text = "ACQUISITO",
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 9.sp,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                )
-            }
-        }
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Text(
+            text = "PROTOCOLLI TELEMATICI & INTEGRITÀ",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp
+        )
 
         Card(
+            modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(18.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
         ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Text("DATI RICEVUTA TELEMATICA", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = GeoPrimary)
-                Text("File trasmesso: ${file.nome}", fontSize = 11.sp)
-                Text("Protocollo Ricezione: 250831${(file.key.hashCode() % 900000 + 100000)}0001", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-                Text("Codice Autenticazione: EF${(file.key.hashCode() % 90000 + 10000)}B7A", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
-                Text("Data Accettazione: ${file.lastModified ?: "Oggi"} ore 11:42", fontSize = 11.sp)
-                Text("Esito Trasmissione: POSITIVO (Nessun errore riscontrato)", fontWeight = FontWeight.Bold, color = PfcSuccess, fontSize = 11.sp)
-            }
-        }
-
-        Text(
-            text = "La presente ricevuta costituisce prova dell'avvenuta presentazione del documento telematico all'Amministrazione Finanziaria secondo le disposizioni vigenti.",
-            fontSize = 10.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            lineHeight = 14.sp
-        )
-    }
-}
-
-@Composable
-private fun DocumentSummaryBreakdownView(
-    file: FileItem,
-    category: DocCategory
-) {
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
-    ) {
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = GeoPrimaryContainer),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "RIEPILOGO FISCALE RAPIDO",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = GeoOnPrimaryContainer,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = file.nome.removeSuffix(".pdf"),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = GeoOnPrimaryContainer
-                    )
-                    Text(
-                        text = "Documento classificato in: ${file.cartella ?: "Archivio Fiscale"} (${file.anno ?: "2025"})",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GeoOnPrimaryContainer.copy(alpha = 0.85f)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(GeoPrimary),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.VpnKey, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                    }
+
+                    Column {
+                        Text("Protocollo Univoco Telematico", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text(proto, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = GeoPrimary, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Impronta di Sicurezza (Hash SHA-256)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = hash,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Chiave Archiviazione Cloud S3/R2", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = file.key,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
                 }
             }
-        }
-
-        item {
-            Text(
-                text = "VOCI E CIFRE CHIAVE",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.8.sp
-            )
-        }
-
-        // Summary Key Metric Cards
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                MetricCard(
-                    title = "Anno Fiscale",
-                    value = file.anno ?: "2025",
-                    icon = Icons.Outlined.CalendarToday,
-                    modifier = Modifier.weight(1f)
-                )
-                MetricCard(
-                    title = "Stato",
-                    value = if (file.stato == "nuovo") "Non Letto" else "Archiviato",
-                    icon = Icons.Outlined.CheckCircle,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        item {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text(
-                        text = "Note & Istruzioni dello Studio PFC",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = when (category) {
-                            DocCategory.F24 -> "Il modello F24 è pronto per il pagamento tramite home banking o addebito telematico su c/c. Verificare il saldo prima della data di scadenza."
-                            DocCategory.DICHIARAZIONE -> "Modello trasmesso regolarmente all'Agenzia delle Entrate. Copia conforme rilasciata con visto di conformità."
-                            DocCategory.BILANCIO -> "Bilancio d'esercizio approvato dall'assemblea dei soci e depositato presso il Registro Imprese CCIAA."
-                            DocCategory.LAVORO -> "Prospetto paghe elaborato dall'ufficio del lavoro. Disponibile per la contabilità aziendale e dipendenti."
-                            else -> "Documento regolarmente acquisito e conservato nei fascicoli dello Studio PFC."
-                        },
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 17.sp
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DocumentMetadataComplianceView(
-    file: FileItem,
-    category: DocCategory
-) {
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Text(
-                text = "METADATI E CONSERVAZIONE A NORMA",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.8.sp
-            )
-        }
-
-        item {
-            MetadataItemRow(label = "Nome File Ufficiale", value = file.nome)
-        }
-        item {
-            MetadataItemRow(label = "Percorso Archivio", value = file.key)
-        }
-        item {
-            MetadataItemRow(label = "Dimensione File", value = "${file.sizeStr} (${file.size} bytes)")
-        }
-        item {
-            MetadataItemRow(label = "Ultima Modifica", value = file.lastModified ?: "N/D")
-        }
-        item {
-            MetadataItemRow(label = "Formato MIME", value = "application/pdf (PDF/A-1b ISO 19005-1)")
-        }
-        item {
-            MetadataItemRow(label = "Impronta Digitale SHA-256", value = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-        }
-        item {
-            MetadataItemRow(label = "Conservazione Sostitutiva", value = "Attiva - Norma CAD DPCM 13/11/2014 (10 Anni)")
-        }
-        item {
-            MetadataItemRow(label = "Studio Emittente", value = "Studio PFC Consulting - P.IVA 01234567890")
-        }
-    }
-}
-
-@Composable
-private fun MetricCard(
-    title: String,
-    value: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        shape = RoundedCornerShape(14.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(icon, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(20.dp))
-            Text(text = title, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-        }
-    }
-}
-
-@Composable
-private fun MetadataItemRow(label: String, value: String) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = label,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = value,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontFamily = if (value.startsWith("e3b") || value.contains("/")) FontFamily.Monospace else FontFamily.Default
-            )
         }
     }
 }

@@ -361,7 +361,7 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _filesLoading.value = true
             val targetYr = forcedYear ?: _selectedYear.value.ifEmpty { null }
-            val (serverYears, folders, _) = repository.fetchArchivioData(targetYr)
+            val (serverYears, folders, serverFiles) = repository.fetchArchivioData(targetYr)
 
             if (serverYears.isNotEmpty()) {
                 _years.value = serverYears
@@ -372,8 +372,11 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
             _cartelle.value = folders
 
             val currentFolder = _selectedCartella.value
-            if (currentFolder != null && folders.any { it.nome == currentFolder.nome }) {
+            if (currentFolder != null) {
                 loadFilesForCartella(_selectedYear.value, currentFolder.nome)
+            } else if (_archivioViewMode.value == 1) {
+                _files.value = serverFiles
+                _filesLoading.value = false
             } else {
                 _filesLoading.value = false
             }

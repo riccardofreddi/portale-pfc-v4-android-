@@ -57,6 +57,9 @@ class PfcRepository(private val context: Context) {
 
     suspend fun login(username: String, password: String): Result<User> = withContext(Dispatchers.IO) {
         try {
+            // Clear any previously cached dummy documents
+            documentDao.clearAll()
+
             val response = apiClient.apiService.login(LoginRequest(username.trim(), password))
             if (response.isSuccessful && response.body()?.ok == true) {
                 val meRes = apiClient.apiService.getMe()
@@ -85,14 +88,35 @@ class PfcRepository(private val context: Context) {
         logAction("logout", "Disconnessione dall'applicazione")
         apiClient.clearSession()
         prefs.edit().clear().apply()
+        documentDao.clearAll()
     }
 
     // === Documenti & Archivio ===
 
+    private fun matchesFolder(cartella: String?, key: String, nome: String, targetFolder: String): Boolean {
+        val normTarget = targetFolder.trim().lowercase()
+        val cleanTarget = normTarget.replace(Regex("^[0-9]+[\\s\\-_.]+"), "").trim()
+
+        val normCartella = (cartella ?: "").trim().lowercase()
+        val cleanCartella = normCartella.replace(Regex("^[0-9]+[\\s\\-_.]+"), "").trim()
+
+        // 1. Direct equality
+        if (normCartella == normTarget || cleanCartella == cleanTarget) return true
+
+        // 2. Substring containment
+        if (cleanTarget.isNotBlank() && cleanCartella.contains(cleanTarget)) return true
+        if (cleanCartella.isNotBlank() && cleanTarget.contains(cleanCartella)) return true
+
+        // 3. Key path matching (e.g. key is "freddi/2025/f24/file.pdf" or "2025/f24/doc.pdf")
+        if (cleanTarget.isNotBlank() && (key.lowercase().contains("/$cleanTarget/") || key.lowercase().contains("/$normTarget/"))) return true
+
+        return false
+    }
+
     suspend fun fetchArchivioData(year: String?): Triple<List<String>, List<Cartella>, List<FileItem>> = withContext(Dispatchers.IO) {
         val targetYr = year ?: "2025"
         try {
-            val res = apiClient.apiService.listDocumenti(year = targetYr)
+            val res = apiClient.apiService.listDocumenti(year = targetYr, anno = targetYr)
             if (res.isSuccessful && res.body() != null) {
                 val body = res.body()!!
                 val serverYears = body.anni ?: emptyList()
@@ -101,11 +125,17 @@ class PfcRepository(private val context: Context) {
 
                 if (serverFiles.isNotEmpty()) {
                     val entities = serverFiles.map { f ->
+                        val inferredCartella = if (!f.cartella.isNullOrBlank()) {
+                            f.cartella
+                        } else {
+                            val parts = f.key.split("/")
+                            if (parts.size >= 3) parts[parts.size - 2] else "Documenti"
+                        }
                         CachedDocumentEntity(
                             key = f.key,
                             nome = f.nome,
                             anno = f.anno ?: targetYr,
-                            cartella = f.cartella ?: "01 - Documenti",
+                            cartella = inferredCartella,
                             size = f.size,
                             sizeStr = f.sizeStr,
                             lastModified = f.lastModified,
@@ -117,7 +147,7 @@ class PfcRepository(private val context: Context) {
                 }
 
                 if (serverCartelle.isEmpty() && serverFiles.isNotEmpty()) {
-                    serverCartelle = serverFiles.groupBy { it.cartella ?: "01 - Documenti" }.map { (fName, fList) ->
+                    serverCartelle = serverFiles.groupBy { it.cartella ?: "Documenti" }.map { (fName, fList) ->
                         Cartella(
                             nome = fName,
                             count = fList.size,
@@ -127,25 +157,24 @@ class PfcRepository(private val context: Context) {
                 }
 
                 if (serverYears.isNotEmpty() || serverCartelle.isNotEmpty() || serverFiles.isNotEmpty()) {
+                    val mappedFiles = if (serverFiles.isNotEmpty()) {
+                        serverFiles
+                    } else {
+                        getAllDocumentsForYear(targetYr)
+                    }
                     return@withContext Triple(
                         if (serverYears.isNotEmpty()) serverYears else listOf(targetYr),
                         serverCartelle,
-                        serverFiles
+                        mappedFiles
                     )
                 }
             }
         } catch (_: Exception) {}
 
-        // Fallback to local cache
-        var cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
-        if (cachedDocs.isEmpty()) {
-            // Seed initial realistic documents if database is completely empty
-            seedInitialDocuments()
-            cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
-        }
-
+        // Fallback to local cache (offline mode) without fake mock data
+        val cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
         val cachedYears = cachedDocs.map { it.anno }.distinct().sortedDescending()
-        val effectiveYear = if (cachedYears.contains(targetYr)) targetYr else cachedYears.firstOrNull() ?: "2025"
+        val effectiveYear = if (cachedYears.contains(targetYr)) targetYr else cachedYears.firstOrNull() ?: targetYr
         val forYear = cachedDocs.filter { it.anno == effectiveYear }
         val grouped = forYear.groupBy { it.cartella }
         val localCartelle = grouped.map { (folder, list) ->
@@ -169,140 +198,10 @@ class PfcRepository(private val context: Context) {
             )
         }
         Triple(
-            if (cachedYears.isNotEmpty()) cachedYears else listOf("2025", "2024", "2023"),
+            if (cachedYears.isNotEmpty()) cachedYears else listOf(effectiveYear),
             localCartelle,
             fileItems
         )
-    }
-
-    private suspend fun seedInitialDocuments() {
-        val seedList = listOf(
-            // 2025
-            CachedDocumentEntity(
-                key = "2025/01_f24/F24_Acconto_Settembre_2025.pdf",
-                nome = "F24_Acconto_Settembre_2025.pdf",
-                anno = "2025",
-                cartella = "01 - Modelli F24",
-                size = 458000,
-                sizeStr = "458 KB",
-                lastModified = "01/09/2025",
-                stato = "nuovo",
-                isPreferito = true
-            ),
-            CachedDocumentEntity(
-                key = "2025/01_f24/F24_Saldo_IVA_Trim2_2025.pdf",
-                nome = "F24_Saldo_IVA_Trim2_2025.pdf",
-                anno = "2025",
-                cartella = "01 - Modelli F24",
-                size = 312000,
-                sizeStr = "312 KB",
-                lastModified = "16/08/2025",
-                stato = "visto",
-                isPreferito = false
-            ),
-            CachedDocumentEntity(
-                key = "2025/01_f24/F24_Contributi_INPS_Trim2.pdf",
-                nome = "F24_Contributi_INPS_Trim2.pdf",
-                anno = "2025",
-                cartella = "01 - Modelli F24",
-                size = 289000,
-                sizeStr = "289 KB",
-                lastModified = "16/07/2025",
-                stato = "scaricato",
-                isPreferito = false
-            ),
-            CachedDocumentEntity(
-                key = "2025/02_bilancio/Bilancio_Provvisorio_I_Semestre_2025.pdf",
-                nome = "Bilancio_Provvisorio_I_Semestre_2025.pdf",
-                anno = "2025",
-                cartella = "02 - Bilancio & Nota Integrativa",
-                size = 1450000,
-                sizeStr = "1.45 MB",
-                lastModified = "20/07/2025",
-                stato = "nuovo",
-                isPreferito = true
-            ),
-            CachedDocumentEntity(
-                key = "2025/03_dichiarazioni/Dichiarazione_Redditi_SC_2025_Bozza.pdf",
-                nome = "Dichiarazione_Redditi_SC_2025_Bozza.pdf",
-                anno = "2025",
-                cartella = "03 - Dichiarazioni Fiscali",
-                size = 2100000,
-                sizeStr = "2.1 MB",
-                lastModified = "28/08/2025",
-                stato = "visto",
-                isPreferito = false
-            ),
-            CachedDocumentEntity(
-                key = "2025/04_cedolini/Cedolino_Paghe_Agosto_2025.pdf",
-                nome = "Cedolino_Paghe_Agosto_2025.pdf",
-                anno = "2025",
-                cartella = "04 - Cedolini & Personale",
-                size = 520000,
-                sizeStr = "520 KB",
-                lastModified = "25/08/2025",
-                stato = "scaricato",
-                isPreferito = false
-            ),
-            CachedDocumentEntity(
-                key = "2025/05_varie/Contratto_Locazione_Registrato.pdf",
-                nome = "Contratto_Locazione_Registrato.pdf",
-                anno = "2025",
-                cartella = "05 - Contratti & Varie",
-                size = 890000,
-                sizeStr = "890 KB",
-                lastModified = "10/05/2025",
-                stato = "visto",
-                isPreferito = false
-            ),
-            // 2024
-            CachedDocumentEntity(
-                key = "2024/01_f24/F24_Saldo_IRES_IRAP_2024.pdf",
-                nome = "F24_Saldo_IRES_IRAP_2024.pdf",
-                anno = "2024",
-                cartella = "01 - Modelli F24",
-                size = 420000,
-                sizeStr = "420 KB",
-                lastModified = "30/11/2024",
-                stato = "scaricato",
-                isPreferito = false
-            ),
-            CachedDocumentEntity(
-                key = "2024/02_bilancio/Bilancio_Depositato_CCIAA_2024.pdf",
-                nome = "Bilancio_Depositato_CCIAA_2024.pdf",
-                anno = "2024",
-                cartella = "02 - Bilancio & Nota Integrativa",
-                size = 3200000,
-                sizeStr = "3.2 MB",
-                lastModified = "15/06/2024",
-                stato = "scaricato",
-                isPreferito = true
-            ),
-            CachedDocumentEntity(
-                key = "2024/03_dichiarazioni/Modello_770_2024_Ricevuta.pdf",
-                nome = "Modello_770_2024_Ricevuta.pdf",
-                anno = "2024",
-                cartella = "03 - Dichiarazioni Fiscali",
-                size = 1100000,
-                sizeStr = "1.1 MB",
-                lastModified = "31/10/2024",
-                stato = "scaricato",
-                isPreferito = false
-            ),
-            // 2023
-            CachedDocumentEntity(
-                key = "2023/02_bilancio/Bilancio_Chiusura_2023.pdf",
-                nome = "Bilancio_Chiusura_2023.pdf",
-                anno = "2023",
-                cartella = "02 - Bilancio & Nota Integrativa",
-                size = 2800000,
-                sizeStr = "2.8 MB",
-                lastModified = "20/06/2023",
-                stato = "scaricato",
-                isPreferito = false
-            )
-        )
-        documentDao.insertAll(seedList)
     }
 
     suspend fun getAllDocumentsForYear(year: String): List<FileItem> = withContext(Dispatchers.IO) {
@@ -357,8 +256,8 @@ class PfcRepository(private val context: Context) {
 
     suspend fun getCartelle(year: String): List<Cartella> = withContext(Dispatchers.IO) {
         try {
-            val res = apiClient.apiService.listDocumenti(year = year)
-            if (res.isSuccessful && res.body()?.cartelle != null) {
+            val res = apiClient.apiService.listDocumenti(year = year, anno = year)
+            if (res.isSuccessful && res.body()?.cartelle != null && res.body()!!.cartelle!!.isNotEmpty()) {
                 return@withContext res.body()!!.cartelle!!
             }
         } catch (_: Exception) {}
@@ -382,8 +281,9 @@ class PfcRepository(private val context: Context) {
 
     suspend fun getFiles(year: String, folder: String): List<FileItem> = withContext(Dispatchers.IO) {
         try {
-            val res = apiClient.apiService.listDocumenti(year = year, folder = folder)
-            if (res.isSuccessful && res.body()?.files != null) {
+            // 1. Try querying backend with specific folder
+            val res = apiClient.apiService.listDocumenti(year = year, anno = year, folder = folder, cartella = folder)
+            if (res.isSuccessful && res.body()?.files != null && res.body()!!.files!!.isNotEmpty()) {
                 val list = res.body()!!.files!!
                 // Sync with DB
                 val entities = list.map { f ->
@@ -391,7 +291,7 @@ class PfcRepository(private val context: Context) {
                         key = f.key,
                         nome = f.nome,
                         anno = year,
-                        cartella = folder,
+                        cartella = if (!f.cartella.isNullOrBlank()) f.cartella else folder,
                         size = f.size,
                         sizeStr = f.sizeStr,
                         lastModified = f.lastModified,
@@ -402,23 +302,58 @@ class PfcRepository(private val context: Context) {
                 documentDao.insertAll(entities)
                 return@withContext list
             }
+
+            // 2. If folder-specific query didn't return files, fetch all files for year and filter
+            val yearRes = apiClient.apiService.listDocumenti(year = year, anno = year)
+            if (yearRes.isSuccessful && yearRes.body()?.files != null && yearRes.body()!!.files!!.isNotEmpty()) {
+                val allFiles = yearRes.body()!!.files!!
+                val matchedFiles = allFiles.filter { f ->
+                    matchesFolder(f.cartella, f.key, f.nome, folder)
+                }
+                if (matchedFiles.isNotEmpty()) {
+                    val entities = matchedFiles.map { f ->
+                        CachedDocumentEntity(
+                            key = f.key,
+                            nome = f.nome,
+                            anno = year,
+                            cartella = if (!f.cartella.isNullOrBlank()) f.cartella else folder,
+                            size = f.size,
+                            sizeStr = f.sizeStr,
+                            lastModified = f.lastModified,
+                            stato = f.stato ?: "visto",
+                            isPreferito = f.isPreferito
+                        )
+                    }
+                    documentDao.insertAll(entities)
+                    return@withContext matchedFiles
+                }
+            }
         } catch (_: Exception) {}
 
         // Fallback to local Room cache
-        val cached = documentDao.getDocumentsByFolder(year, folder).firstOrNull() ?: emptyList()
-        cached.map {
-            FileItem(
-                nome = it.nome,
-                key = it.key,
-                size = it.size,
-                sizeStr = it.sizeStr,
-                lastModified = it.lastModified,
-                stato = it.stato,
-                isPreferito = it.isPreferito,
-                anno = it.anno,
-                cartella = it.cartella
-            )
+        val cached = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
+        val forYear = cached.filter { it.anno == year }
+        val matched = forYear.filter { doc ->
+            matchesFolder(doc.cartella, doc.key, doc.nome, folder)
         }
+
+        if (matched.isNotEmpty()) {
+            return@withContext matched.map {
+                FileItem(
+                    nome = it.nome,
+                    key = it.key,
+                    size = it.size,
+                    sizeStr = it.sizeStr,
+                    lastModified = it.lastModified,
+                    stato = it.stato,
+                    isPreferito = it.isPreferito,
+                    anno = it.anno,
+                    cartella = it.cartella
+                )
+            }
+        }
+
+        emptyList()
     }
 
     suspend fun togglePreferito(file: FileItem): Boolean = withContext(Dispatchers.IO) {

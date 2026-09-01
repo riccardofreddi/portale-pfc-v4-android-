@@ -21,7 +21,9 @@ interface PfcApiService {
     @GET("api/documenti/list")
     suspend fun listDocumenti(
         @Query("year") year: String? = null,
-        @Query("folder") folder: String? = null
+        @Query("anno") anno: String? = null,
+        @Query("folder") folder: String? = null,
+        @Query("cartella") cartella: String? = null
     ): Response<ListResponse>
 
     @GET("api/preferiti")

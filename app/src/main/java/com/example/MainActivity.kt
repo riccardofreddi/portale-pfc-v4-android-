@@ -353,8 +353,8 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     onTabChange = { viewModel.setMessaggiTab(it) },
                                     onToggleExpand = { viewModel.toggleExpandMessage(it) },
                                     onToggleArchive = { viewModel.toggleArchiveMessage(it) },
-                                    onSubmitUpload = { msgId, file ->
-                                        viewModel.submitUploadReply(msgId, file)
+                                    onSubmitUploadFile = { msgId, file ->
+                                        viewModel.submitUploadReplyRealFile(msgId, file)
                                     }
                                 )
                             }
@@ -393,6 +393,7 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                 NotificheBottomSheet(
                     notifiche = notifiche,
                     onDismiss = { viewModel.setShowNotifSheet(false) },
+                    onNotificaClick = { viewModel.onNotificaClicked(it) },
                     onMarkAsRead = { viewModel.markNotificaLetta(it) },
                     onMarkAllAsRead = { viewModel.markAllNotificheLette() },
                     onClearRead = { viewModel.clearNotificheLette() }

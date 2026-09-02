@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -19,18 +24,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.example.data.local.entity.CachedMessaggioEntity
 import com.example.ui.components.EmptyStateView
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
+import java.io.File
+import java.io.FileOutputStream
 
 @Composable
 fun MessaggiScreen(
@@ -41,104 +48,135 @@ fun MessaggiScreen(
     onTabChange: (Int) -> Unit,
     onToggleExpand: (String) -> Unit,
     onToggleArchive: (CachedMessaggioEntity) -> Unit,
-    onSubmitUpload: (msgId: String, fileName: String) -> Unit
+    onSubmitUploadFile: (msgId: String, file: File) -> Unit
 ) {
     val currentList = if (activeTab == 0) attiviList else archiviatiList
     val unreadCount = attiviList.count { !it.letto }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-    ) {
-        // Top Tab Selector (Attivi / Archiviati) with Executive Theme
-        Surface(
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 2.dp,
-            shadowElevation = 2.dp
+    Scaffold { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(MaterialTheme.colorScheme.background)
         ) {
-            TabRow(
-                selectedTabIndex = activeTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = GeoPrimary,
-                indicator = { tabPositions ->
-                    TabRowDefaults.SecondaryIndicator(
-                        modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]),
-                        color = GeoPrimary,
-                        height = 3.dp
-                    )
-                }
+            // Top Tab Selector (Attivi / Archiviati)
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp,
+                shadowElevation = 2.dp
             ) {
-                Tab(
-                    selected = activeTab == 0,
-                    onClick = { onTabChange(0) },
-                    text = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                "Messaggi Attivi",
-                                color = if (activeTab == 0) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = if (activeTab == 0) FontWeight.ExtraBold else FontWeight.Medium,
-                                fontSize = 14.sp
-                            )
-                            if (unreadCount > 0) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(20.dp)
-                                        .clip(CircleShape)
-                                        .background(PfcDanger),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = unreadCount.toString(),
-                                        color = Color.White,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                TabRow(
+                    selectedTabIndex = activeTab,
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = GeoPrimary,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[activeTab]),
+                            color = GeoPrimary,
+                            height = 3.dp
+                        )
+                    }
+                ) {
+                    Tab(
+                        selected = activeTab == 0,
+                        onClick = { onTabChange(0) },
+                        text = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "Messaggi Attivi",
+                                    color = if (activeTab == 0) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = if (activeTab == 0) FontWeight.ExtraBold else FontWeight.Medium,
+                                    fontSize = 14.sp
+                                )
+                                if (unreadCount > 0) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(20.dp)
+                                            .clip(CircleShape)
+                                            .background(PfcDanger),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = unreadCount.toString(),
+                                            color = Color.White,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
+                    )
+                    Tab(
+                        selected = activeTab == 1,
+                        onClick = { onTabChange(1) },
+                        text = {
+                            Text(
+                                "Archiviati (${archiviatiList.size})",
+                                color = if (activeTab == 1) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = if (activeTab == 1) FontWeight.ExtraBold else FontWeight.Medium,
+                                fontSize = 14.sp
+                            )
+                        }
+                    )
+                }
+            }
+
+            // Quick Info Banner: Istruzioni upload richiesti dallo studio
+            Surface(
+                color = GeoPrimary.copy(alpha = 0.08f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Info,
+                        contentDescription = null,
+                        tint = GeoPrimary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        text = "Tocca un messaggio con richiesta per visualizzare i dettagli ed allegare il file richiesto dallo Studio.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+
+            // Messages List
+            if (currentList.isEmpty()) {
+                EmptyStateView(
+                    icon = if (activeTab == 0) Icons.Outlined.ChatBubbleOutline else Icons.Outlined.Archive,
+                    title = if (activeTab == 0) "Nessun messaggio attivo" else "Nessun messaggio archiviato",
+                    description = if (activeTab == 0)
+                        "Tutte le comunicazioni dello studio sono state lette o archiviate."
+                    else
+                        "I messaggi archiviati appariranno in questa sezione."
                 )
-                Tab(
-                    selected = activeTab == 1,
-                    onClick = { onTabChange(1) },
-                    text = {
-                        Text(
-                            "Archiviati (${archiviatiList.size})",
-                            color = if (activeTab == 1) GeoPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = if (activeTab == 1) FontWeight.ExtraBold else FontWeight.Medium,
-                            fontSize = 14.sp
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    items(currentList, key = { it.id }) { msg ->
+                        val isExpanded = expandedId == msg.id
+                        MessaggioCard(
+                            msg = msg,
+                            isExpanded = isExpanded,
+                            onCardClick = { onToggleExpand(msg.id) },
+                            onArchiveClick = { onToggleArchive(msg) },
+                            onSubmitUploadFile = { file -> onSubmitUploadFile(msg.id, file) }
                         )
                     }
-                )
-            }
-        }
-
-        // Messages List
-        if (currentList.isEmpty()) {
-            EmptyStateView(
-                icon = if (activeTab == 0) Icons.Outlined.ChatBubbleOutline else Icons.Outlined.Archive,
-                title = if (activeTab == 0) "Nessun messaggio attivo" else "Nessun messaggio archiviato",
-                description = if (activeTab == 0) "Tutte le comunicazioni dello studio sono state lette o archiviate." else "I messaggi archiviati appariranno in questa sezione."
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                items(currentList, key = { it.id }) { msg ->
-                    val isExpanded = expandedId == msg.id
-                    MessaggioCard(
-                        msg = msg,
-                        isExpanded = isExpanded,
-                        onCardClick = { onToggleExpand(msg.id) },
-                        onArchiveClick = { onToggleArchive(msg) },
-                        onSubmitUpload = { fileName -> onSubmitUpload(msg.id, fileName) }
-                    )
                 }
             }
         }
@@ -151,10 +189,24 @@ fun MessaggioCard(
     isExpanded: Boolean,
     onCardClick: () -> Unit,
     onArchiveClick: () -> Unit,
-    onSubmitUpload: (fileName: String) -> Unit
+    onSubmitUploadFile: (file: File) -> Unit
 ) {
-    var selectedReplyFile by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    var selectedFile by remember { mutableStateOf<File?>(null) }
+    var selectedFileName by remember { mutableStateOf<String?>(null) }
     val isUnread = !msg.letto && !msg.archiviato
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val file = uriToFile(context, uri)
+            if (file != null) {
+                selectedFile = file
+                selectedFileName = file.name
+            }
+        }
+    }
 
     Card(
         modifier = Modifier
@@ -246,13 +298,13 @@ fun MessaggioCard(
                 }
             }
 
-            // Message Preview / Full Body
+            // Message Body
             Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = msg.corpo,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                maxLines = if (isExpanded) Int.MAX_VALUE else 3,
                 overflow = TextOverflow.Ellipsis,
                 lineHeight = 22.sp
             )
@@ -278,7 +330,7 @@ fun MessaggioCard(
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = msg.allegatoNome,
+                            text = "Allegato: ${msg.allegatoNome}",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -288,7 +340,7 @@ fun MessaggioCard(
                 }
             }
 
-            // Expanded Actions: Upload Request section
+            // Upload Request section
             AnimatedVisibility(
                 visible = isExpanded && msg.richiedeUpload && !msg.haRisposta,
                 enter = expandVertically() + fadeIn(),
@@ -298,9 +350,9 @@ fun MessaggioCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 14.dp),
-                    colors = CardDefaults.cardColors(containerColor = PfcMidnight),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
                     shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, PfcGold.copy(alpha = 0.4f))
+                    border = BorderStroke(1.dp, GeoPrimary.copy(alpha = 0.5f))
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
@@ -313,14 +365,14 @@ fun MessaggioCard(
                             Icon(
                                 imageVector = Icons.Filled.UploadFile,
                                 contentDescription = null,
-                                tint = PfcGold,
+                                tint = GeoPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
                                 text = "Richiesta Documento dallo Studio",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
 
@@ -328,63 +380,115 @@ fun MessaggioCard(
                             Text(
                                 text = msg.uploadDescrizione,
                                 fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.85f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 lineHeight = 18.sp
                             )
                         }
 
-                        // Simulated file upload selector
-                        if (selectedReplyFile == null) {
+                        // Native File Selector from Device
+                        if (selectedFile == null) {
                             OutlinedButton(
                                 onClick = {
-                                    selectedReplyFile = "Documento_Richiesto_${msg.id.take(4)}.pdf"
+                                    filePickerLauncher.launch("*/*")
                                 },
                                 shape = RoundedCornerShape(50),
-                                border = BorderStroke(1.dp, PfcGold.copy(alpha = 0.5f)),
+                                border = BorderStroke(1.5.dp, GeoPrimary),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Icon(Icons.Filled.AttachFile, contentDescription = null, tint = PfcGoldLight, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Seleziona File da Inviare", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Icon(Icons.Filled.FolderOpen, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Scegli File dal Dispositivo", color = GeoPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
                         } else {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
-                                    .border(1.dp, PfcGold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, GeoPrimary.copy(alpha = 0.5f))
                             ) {
-                                Text(
-                                    text = selectedReplyFile!!,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White
-                                )
-                                IconButton(
-                                    onClick = { selectedReplyFile = null },
-                                    modifier = Modifier.size(24.dp)
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Icon(Icons.Filled.Close, contentDescription = "Rimuovi", tint = Color.White, modifier = Modifier.size(14.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(Icons.Filled.Description, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(20.dp))
+                                        Column {
+                                            Text(
+                                                text = selectedFileName ?: "File selezionato",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val sizeKb = (selectedFile?.length() ?: 0L) / 1024
+                                            Text(
+                                                text = "$sizeKb KB",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            selectedFile = null
+                                            selectedFileName = null
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        Icon(Icons.Filled.Close, contentDescription = "Rimuovi", tint = PfcDanger, modifier = Modifier.size(16.dp))
+                                    }
                                 }
                             }
 
                             Button(
                                 onClick = {
-                                    onSubmitUpload(selectedReplyFile!!)
+                                    selectedFile?.let { f ->
+                                        onSubmitUploadFile(f)
+                                        selectedFile = null
+                                        selectedFileName = null
+                                    }
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = PfcGold),
+                                colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
                                 shape = RoundedCornerShape(50),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Invia Risposta con Documento", color = PfcMidnight, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Filled.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Invia Documento allo Studio", color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+private fun uriToFile(context: Context, uri: Uri): File? {
+    return try {
+        val contentResolver = context.contentResolver
+        var fileName = "documento_${System.currentTimeMillis()}"
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex != -1 && cursor.moveToFirst()) {
+                val foundName = cursor.getString(nameIndex)
+                if (!foundName.isNullOrBlank()) fileName = foundName
+            }
+        }
+        val tempFile = File(context.cacheDir, fileName)
+        contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(tempFile).use { output ->
+                input.copyTo(output)
+            }
+        }
+        tempFile
+    } catch (_: Exception) {
+        null
     }
 }

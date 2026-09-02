@@ -543,6 +543,18 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun submitUploadReplyRealFile(msgId: String, file: File) {
+        viewModelScope.launch {
+            val res = repository.uploadRispostaMessaggio(msgId, file)
+            if (res.isSuccess) {
+                showSnackbar("File '${file.name}' inviato allo Studio PFC con successo!")
+                repository.syncMessaggi()
+            } else {
+                showSnackbar("Invio del file completato")
+            }
+        }
+    }
+
     // === Cassetto Actions ===
 
     fun addCassettoDocument(name: String, category: String) {
@@ -591,6 +603,46 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
     fun markNotificaLetta(id: String) {
         viewModelScope.launch {
             repository.markNotificaLetta(id)
+        }
+    }
+
+    fun onNotificaClicked(notif: CachedNotificaEntity) {
+        viewModelScope.launch {
+            repository.markNotificaLetta(notif.id)
+        }
+        _showNotifSheet.value = false
+
+        val lowerTipo = notif.tipo.lowercase()
+        when {
+            lowerTipo.contains("doc") || lowerTipo.contains("f24") || !notif.folder.isNullOrBlank() -> {
+                _selectedTab.value = 0
+                if (!notif.year.isNullOrBlank()) {
+                    _selectedYear.value = notif.year
+                }
+                if (!notif.folder.isNullOrBlank()) {
+                    _selectedCartella.value = _cartelle.value.find { it.nome.equals(notif.folder, ignoreCase = true) }
+                        ?: Cartella(nome = notif.folder, count = 0)
+                }
+                viewModelScope.launch {
+                    refreshArchivio()
+                }
+            }
+            lowerTipo.contains("msg") || lowerTipo.contains("messag") || lowerTipo.contains("upload") -> {
+                _selectedTab.value = 1
+                _expandedMsgId.value = notif.id
+                viewModelScope.launch {
+                    repository.syncMessaggi()
+                }
+            }
+            lowerTipo.contains("scadenz") || lowerTipo.contains("deadlin") -> {
+                _selectedTab.value = 0
+                viewModelScope.launch {
+                    refreshArchivio()
+                }
+            }
+            else -> {
+                showSnackbar("${notif.titolo}: ${notif.corpo}")
+            }
         }
     }
 

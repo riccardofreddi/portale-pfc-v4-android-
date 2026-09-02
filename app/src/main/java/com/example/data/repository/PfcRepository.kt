@@ -186,16 +186,27 @@ class PfcRepository(private val context: Context) {
 
             if (res.isSuccessful && res.body() != null) {
                 val body = res.body()!!
-                val serverCartelle = (body.cartelle ?: emptyList()).toMutableList()
+                val serverCartelleFromAdmin = (body.cartelle ?: emptyList()).map { sc ->
+                    // Calculate dynamic count and new files specifically for this admin-created folder
+                    val folderDocs = (body.files ?: emptyList()).filter { f ->
+                        matchesFolder(f.cartella, f.key, f.nome, sc.nome)
+                    }
+                    sc.copy(
+                        count = folderDocs.size,
+                        nuovi = folderDocs.count { it.stato == "nuovo" }
+                    )
+                }
                 val serverFiles = body.files ?: emptyList()
 
+                // Clear outdated cache for this year and insert current server files
+                documentDao.deleteByYear(targetYr)
                 if (serverFiles.isNotEmpty()) {
                     val entities = serverFiles.map { f ->
                         val inferredCartella = if (!f.cartella.isNullOrBlank()) {
                             f.cartella
                         } else {
                             val parts = f.key.split("/")
-                            if (parts.size >= 3) parts[parts.size - 2] else "Documenti"
+                            if (parts.size >= 3) parts[parts.size - 2] else ""
                         }
                         CachedDocumentEntity(
                             key = f.key,
@@ -212,39 +223,8 @@ class PfcRepository(private val context: Context) {
                     documentDao.insertAll(entities)
                 }
 
-                // If folders not returned explicitly in body, group files
-                if (serverCartelle.isEmpty() && serverFiles.isNotEmpty()) {
-                    val grouped = serverFiles.groupBy { it.cartella ?: "Documenti" }.map { (fName, fList) ->
-                        Cartella(
-                            nome = fName,
-                            count = fList.size,
-                            nuovi = fList.count { it.stato == "nuovo" }
-                        )
-                    }
-                    serverCartelle.addAll(grouped)
-                }
-
-                // Ensure standard fiscal folders exist alongside admin-created folders in V2
-                val standardFolders = listOf("F24", "Dichiarazioni", "Bilanci", "Varie")
-                val existingLowerNames = serverCartelle.map { it.nome.trim().lowercase() }.toSet()
-                for (std in standardFolders) {
-                    val alreadyPresent = existingLowerNames.any {
-                        it == std.lowercase() || it.startsWith(std.lowercase())
-                    }
-                    if (!alreadyPresent) {
-                        val countInDocs = serverFiles.count { matchesFolder(it.cartella, it.key, it.nome, std) }
-                        serverCartelle.add(
-                            Cartella(
-                                nome = std,
-                                count = countInDocs,
-                                nuovi = serverFiles.count { matchesFolder(it.cartella, it.key, it.nome, std) && it.stato == "nuovo" }
-                            )
-                        )
-                    }
-                }
-
                 val allYears = if (serverYears.isNotEmpty()) serverYears else listOf(targetYr)
-                return@withContext Triple(allYears, serverCartelle, serverFiles)
+                return@withContext Triple(allYears, serverCartelleFromAdmin, serverFiles)
             }
         } catch (e: Exception) {
             Log.e("PfcRepository", "fetchArchivioData error: ${e.message}")
@@ -338,13 +318,19 @@ class PfcRepository(private val context: Context) {
                 anno = year,
                 year = year
             )
-            if (res.isSuccessful && !res.body()?.cartelle.isNullOrEmpty()) {
-                return@withContext res.body()!!.cartelle!!
+            if (res.isSuccessful && res.body() != null) {
+                val body = res.body()!!
+                val serverCartelle = body.cartelle ?: emptyList()
+                val serverFiles = body.files ?: emptyList()
+                return@withContext serverCartelle.map { sc ->
+                    val folderDocs = serverFiles.filter { f -> matchesFolder(f.cartella, f.key, f.nome, sc.nome) }
+                    sc.copy(count = folderDocs.size, nuovi = folderDocs.count { it.stato == "nuovo" })
+                }
             }
         } catch (_: Exception) {}
 
         val cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
-        val forYear = cachedDocs.filter { it.anno == year }
+        val forYear = cachedDocs.filter { it.anno == year && it.cartella.isNotBlank() }
         if (forYear.isNotEmpty()) {
             val grouped = forYear.groupBy { it.cartella }
             return@withContext grouped.map { (folder, list) ->
@@ -555,23 +541,73 @@ class PfcRepository(private val context: Context) {
         try {
             val res = apiClient.apiService.getMessaggi(username = currentUser)
             if (res.isSuccessful && res.body()?.messaggi != null) {
-                val entities = res.body()!!.messaggi.map { map ->
+                val serverList = res.body()!!.messaggi
+                if (serverList.isEmpty()) {
+                    messaggioDao.clearAll()
+                    return@withContext
+                }
+
+                val entities = serverList.map { map ->
+                    val rawId = map["id"]?.toString() ?: map["_id"]?.toString() ?: UUID.randomUUID().toString()
+                    val rawTitolo = map["titolo"]?.toString()
+                        ?: map["title"]?.toString()
+                        ?: map["oggetto"]?.toString()
+                        ?: map["subject"]?.toString()
+                        ?: "Comunicazione dallo Studio"
+                    val rawCorpo = map["corpo"]?.toString()
+                        ?: map["testo"]?.toString()
+                        ?: map["messaggio"]?.toString()
+                        ?: map["content"]?.toString()
+                        ?: map["body"]?.toString()
+                        ?: ""
+                    val rawData = map["dataInvio"]?.toString()
+                        ?: map["data"]?.toString()
+                        ?: map["createdAt"]?.toString()
+                        ?: map["date"]?.toString()
+                        ?: ""
+                    val rawLetto = (map["letto"] as? Boolean)
+                        ?: (map["read"] as? Boolean)
+                        ?: (map["isRead"] as? Boolean)
+                        ?: false
+                    val rawArchiviato = (map["archiviato"] as? Boolean) ?: false
+                    val rawRichiedeUpload = (map["richiedeUpload"] as? Boolean)
+                        ?: (map["richiede_upload"] as? Boolean)
+                        ?: (map["richiestaUpload"] as? Boolean)
+                        ?: false
+                    val rawUploadDesc = map["uploadDescrizione"]?.toString()
+                        ?: map["descrizioneUpload"]?.toString()
+                        ?: map["richiesta_dettaglio"]?.toString()
+                    val rawHaRisposta = (map["haRisposta"] as? Boolean)
+                        ?: (map["risposto"] as? Boolean)
+                        ?: false
+                    val rawAllegato = map["allegatoNome"]?.toString()
+                        ?: map["allegato"]?.toString()
+                        ?: map["attachment"]?.toString()
+                        ?: map["file"]?.toString()
+
                     CachedMessaggioEntity(
-                        id = map["id"]?.toString() ?: UUID.randomUUID().toString(),
-                        titolo = map["titolo"]?.toString() ?: "",
-                        corpo = map["corpo"]?.toString() ?: "",
-                        dataInvio = map["dataInvio"]?.toString() ?: "",
-                        letto = map["letto"] as? Boolean ?: false,
-                        archiviato = map["archiviato"] as? Boolean ?: false,
-                        richiedeUpload = map["richiedeUpload"] as? Boolean ?: false,
-                        uploadDescrizione = map["uploadDescrizione"]?.toString(),
-                        haRisposta = map["haRisposta"] as? Boolean ?: false,
-                        allegatoNome = map["allegatoNome"]?.toString()
+                        id = rawId,
+                        titolo = rawTitolo,
+                        corpo = rawCorpo,
+                        dataInvio = rawData,
+                        letto = rawLetto,
+                        archiviato = rawArchiviato,
+                        richiedeUpload = rawRichiedeUpload,
+                        uploadDescrizione = rawUploadDesc,
+                        haRisposta = rawHaRisposta,
+                        allegatoNome = rawAllegato
                     )
+                }
+
+                val currentIds = entities.map { it.id }.filter { it.isNotBlank() }
+                if (currentIds.isNotEmpty()) {
+                    messaggioDao.deleteNotIn(currentIds)
                 }
                 messaggioDao.insertAll(entities)
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e("PfcRepository", "syncMessaggi error: ${e.message}")
+        }
     }
 
     suspend fun setMessaggioLetto(id: String, letto: Boolean) = withContext(Dispatchers.IO) {
@@ -723,21 +759,77 @@ class PfcRepository(private val context: Context) {
         try {
             val res = apiClient.apiService.getNotifiche()
             if (res.isSuccessful && res.body()?.notifiche != null) {
-                val entities = res.body()!!.notifiche.map { map ->
+                val serverNotifiche = res.body()!!.notifiche
+                if (serverNotifiche.isEmpty()) {
+                    notificaDao.clearAll()
+                    return@withContext
+                }
+
+                val entities = serverNotifiche.map { map ->
+                    val rawId = map["id"]?.toString() ?: map["_id"]?.toString() ?: UUID.randomUUID().toString()
+                    val rawTipo = map["tipo"]?.toString() ?: map["type"]?.toString() ?: "avviso"
+                    val rawFolder = map["folder"]?.toString() ?: map["cartella"]?.toString()
+                    val rawYear = map["year"]?.toString() ?: map["anno"]?.toString()
+
+                    val defaultTitolo = when (rawTipo.lowercase()) {
+                        "document", "documento", "documento_nuovo", "f24" -> if (!rawFolder.isNullOrBlank()) "Nuovo Documento: $rawFolder" else "Nuovo Documento Fiscale"
+                        "message", "messaggio" -> "Nuovo Messaggio dallo Studio"
+                        "richiesta_upload" -> "Richiesta Documenti dallo Studio"
+                        "deadline", "scadenza", "scadenza_fiscale" -> "Promemoria Scadenza Fiscale"
+                        else -> "Comunicazione Studio PFC"
+                    }
+
+                    val rawTitolo = map["titolo"]?.toString()
+                        ?: map["title"]?.toString()
+                        ?: map["oggetto"]?.toString()
+                        ?: map["subject"]?.toString()
+                        ?: defaultTitolo
+
+                    val defaultCorpo = when (rawTipo.lowercase()) {
+                        "document", "documento", "documento_nuovo", "f24" -> "Lo Studio PFC ha caricato un nuovo documento disponibile nel tuo archivio${if (!rawFolder.isNullOrBlank()) " ($rawFolder)" else ""}."
+                        "message", "messaggio" -> "Hai una nuova comunicazione dallo Studio PFC da consultare."
+                        "richiesta_upload" -> "È richiesto l'invio di un documento o fattura allo studio."
+                        "deadline", "scadenza" -> "Verifica i modelli F24 e adempimenti in scadenza."
+                        else -> "Ci sono nuovi aggiornamenti contabili e amministrativi per la tua azienda."
+                    }
+
+                    val rawCorpo = map["corpo"]?.toString()
+                        ?: map["body"]?.toString()
+                        ?: map["testo"]?.toString()
+                        ?: map["message"]?.toString()
+                        ?: defaultCorpo
+
+                    val rawData = map["dataCreazione"]?.toString()
+                        ?: map["data"]?.toString()
+                        ?: map["date"]?.toString()
+                        ?: map["createdAt"]?.toString()
+                        ?: "Oggi"
+
+                    val rawLetta = (map["letta"] as? Boolean)
+                        ?: (map["read"] as? Boolean)
+                        ?: false
+
                     CachedNotificaEntity(
-                        id = map["id"]?.toString() ?: UUID.randomUUID().toString(),
-                        tipo = map["tipo"]?.toString() ?: "avviso",
-                        titolo = map["titolo"]?.toString() ?: "Notifica Studio",
-                        corpo = map["corpo"]?.toString() ?: "",
-                        letta = map["letta"] as? Boolean ?: false,
-                        dataCreazione = map["dataCreazione"]?.toString() ?: "",
-                        year = map["year"]?.toString(),
-                        folder = map["folder"]?.toString()
+                        id = rawId,
+                        tipo = rawTipo,
+                        titolo = rawTitolo,
+                        corpo = rawCorpo,
+                        letta = rawLetta,
+                        dataCreazione = rawData,
+                        year = rawYear,
+                        folder = rawFolder
                     )
+                }
+
+                val currentIds = entities.map { it.id }.filter { it.isNotBlank() }
+                if (currentIds.isNotEmpty()) {
+                    notificaDao.deleteNotIn(currentIds)
                 }
                 notificaDao.insertAll(entities)
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e("PfcRepository", "syncNotifiche error: ${e.message}")
+        }
     }
 
     suspend fun markNotificaLetta(id: String) = withContext(Dispatchers.IO) {

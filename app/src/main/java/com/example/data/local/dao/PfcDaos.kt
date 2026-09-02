@@ -30,6 +30,9 @@ interface DocumentDao {
     @Query("UPDATE cached_documents SET stato = :stato WHERE `key` = :key")
     suspend fun updateStato(key: String, stato: String)
 
+    @Query("DELETE FROM cached_documents WHERE anno = :anno")
+    suspend fun deleteByYear(anno: String)
+
     @Query("DELETE FROM cached_documents")
     suspend fun clearAll()
 }
@@ -53,6 +56,9 @@ interface MessaggioDao {
 
     @Query("UPDATE cached_messaggi SET haRisposta = 1 WHERE id = :id")
     suspend fun setRisposto(id: String)
+
+    @Query("DELETE FROM cached_messaggi WHERE id NOT IN (:currentIds)")
+    suspend fun deleteNotIn(currentIds: List<String>)
 
     @Query("DELETE FROM cached_messaggi")
     suspend fun clearAll()
@@ -95,6 +101,9 @@ interface NotificaDao {
 
     @Query("UPDATE cached_notifiche SET letta = 1")
     suspend fun markAllAsRead()
+
+    @Query("DELETE FROM cached_notifiche WHERE id NOT IN (:currentIds)")
+    suspend fun deleteNotIn(currentIds: List<String>)
 
     @Query("DELETE FROM cached_notifiche WHERE letta = 1")
     suspend fun deleteRead()

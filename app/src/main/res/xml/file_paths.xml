@@ -2,4 +2,7 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <files-path name="documents" path="documents/" />
     <cache-path name="pdf_cache" path="pdf/" />
+    <cache-path name="pfc_docs" path="pfc_docs/" />
+    <external-files-path name="external_files" path="." />
+    <external-cache-path name="external_cache" path="." />
 </paths>

@@ -3,6 +3,7 @@ package com.example.ui.viewmodel
 import android.app.Application
 import android.content.Context
 import android.os.Environment
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.entity.*
@@ -10,6 +11,7 @@ import com.example.data.model.*
 import com.example.data.repository.PfcRepository
 import com.example.notification.LocalNotificationHelper
 import com.example.notification.ReminderScheduler
+import com.example.util.DocumentFileManager
 import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
@@ -162,6 +164,20 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
             ReminderScheduler.scheduleReminders(application)
         }
 
+        // Check active session and sync
+        viewModelScope.launch {
+            if (_isLoggedIn.value) {
+                val validatedUser = repository.checkExistingSession()
+                if (validatedUser != null) {
+                    _currentUser.value = validatedUser
+                    syncAllData()
+                } else {
+                    _isLoggedIn.value = false
+                    _currentUser.value = null
+                }
+            }
+        }
+
         // Register FCM device token on backend
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -172,15 +188,11 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     .addOnFailureListener { e ->
-                        android.util.Log.i("PfcViewModel", "Firebase push not active on emulator/device: ${e.message}")
+                        Log.i("PfcViewModel", "Firebase push not active on emulator/device: ${e.message}")
                     }
             } catch (e: Throwable) {
-                android.util.Log.i("PfcViewModel", "Firebase messaging init skipped: ${e.message}")
+                Log.i("PfcViewModel", "Firebase messaging init skipped: ${e.message}")
             }
-        }
-
-        if (_isLoggedIn.value) {
-            syncAllData()
         }
     }
 
@@ -204,7 +216,7 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
                 _currentUser.value = u
                 _isLoggedIn.value = true
                 _loginLoading.value = false
-                
+
                 // Re-register FCM token on server with authenticated user session
                 try {
                     FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
@@ -230,6 +242,8 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
             _currentUser.value = null
             _showSettingsSheet.value = false
             _selectedTab.value = 0
+            _selectedCartella.value = null
+            _files.value = emptyList()
             showSnackbar("Disconnessione effettuata")
         }
     }
@@ -286,15 +300,33 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Downloads real document from backend and saves it into public Download folder.
+     */
     fun downloadDocument(file: FileItem) {
         viewModelScope.launch {
-            repository.markDocumentScaricato(file)
-            _files.value = _files.value.map {
-                if (it.key == file.key) it.copy(stato = "scaricato") else it
+            showSnackbar("Download di ${file.nome} in corso...")
+            val result = repository.downloadDocumentFile(file)
+            result.onSuccess { localFile ->
+                val app = getApplication<Application>()
+                val publicResult = DocumentFileManager.saveToPublicDownloads(
+                    context = app,
+                    sourceFile = localFile,
+                    displayName = file.nome
+                )
+                publicResult.onSuccess { savedFile ->
+                    _files.value = _files.value.map {
+                        if (it.key == file.key) it.copy(stato = "scaricato") else it
+                    }
+                    val updatedFolders = repository.getCartelle(_selectedYear.value)
+                    if (updatedFolders.isNotEmpty()) _cartelle.value = updatedFolders
+                    showSnackbar("File salvato in Download: ${savedFile.name}")
+                }.onFailure { err ->
+                    showSnackbar("Errore salvataggio file: ${err.message}")
+                }
+            }.onFailure { err ->
+                showSnackbar("Download non riuscito: ${err.message}")
             }
-            val updatedFolders = repository.getCartelle(_selectedYear.value)
-            if (updatedFolders.isNotEmpty()) _cartelle.value = updatedFolders
-            showSnackbar("Download avviato: ${file.nome}")
         }
     }
 
@@ -436,20 +468,45 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         _selectedBatchKeys.value = emptySet()
     }
 
+    /**
+     * Downloads real selected documents as a single ZIP archive from backend.
+     */
     fun downloadBatchSelected() {
-        val keys = _selectedBatchKeys.value
+        val keys = _selectedBatchKeys.value.toList()
+        if (keys.isEmpty()) return
         val count = keys.size
+
         viewModelScope.launch {
-            keys.forEach { key ->
-                val file = _files.value.find { it.key == key }
-                if (file != null) repository.markDocumentScaricato(file)
+            showSnackbar("Preparazione archivio ZIP di $count documenti...")
+            val zipName = "Documenti_PFC_${_selectedYear.value}.zip"
+            val result = repository.downloadBatchZip(keys, zipName)
+
+            result.onSuccess { file ->
+                keys.forEach { key ->
+                    val fileItem = _files.value.find { it.key == key }
+                    if (fileItem != null) repository.markDocumentScaricato(fileItem)
+                }
+                _files.value = _files.value.map {
+                    if (keys.contains(it.key)) it.copy(stato = "scaricato") else it
+                }
+                clearBatchSelection()
+                showSnackbar("Archivio salvato in Download: ${file.name}")
+            }.onFailure { err ->
+                // Fallback: download individual files into Downloads folder
+                showSnackbar("Download multiplo in corso (${count} file)...")
+                var savedCount = 0
+                val app = getApplication<Application>()
+                for (key in keys) {
+                    val fileItem = _files.value.find { it.key == key } ?: continue
+                    val res = repository.downloadDocumentFile(fileItem)
+                    if (res.isSuccess) {
+                        val pubRes = DocumentFileManager.saveToPublicDownloads(app, res.getOrThrow(), fileItem.nome)
+                        if (pubRes.isSuccess) savedCount++
+                    }
+                }
+                clearBatchSelection()
+                showSnackbar("$savedCount file salvati con successo nella cartella Download")
             }
-            _files.value = _files.value.map {
-                if (keys.contains(it.key)) it.copy(stato = "scaricato") else it
-            }
-            repository.logAction("download_batch", "Scaricati $count documenti in blocco")
-            clearBatchSelection()
-            showSnackbar("$count documenti salvati con successo")
         }
     }
 
@@ -515,6 +572,18 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
             repository.deleteCassettoFile(file.key, file.nome)
             showSnackbar("Documento eliminato dal cassetto")
         }
+    }
+
+    fun downloadCassettoDocument(file: CachedCassettoEntity) {
+        val fileItem = FileItem(
+            nome = file.nome,
+            key = file.key,
+            size = file.size,
+            sizeStr = file.sizeStr,
+            anno = "",
+            cartella = file.categoria
+        )
+        downloadDocument(fileItem)
     }
 
     // === Notifiche Actions ===

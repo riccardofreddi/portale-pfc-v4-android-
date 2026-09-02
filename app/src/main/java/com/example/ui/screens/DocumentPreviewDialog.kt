@@ -1,31 +1,17 @@
 package com.example.ui.screens
 
 import android.content.Context
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfRenderer
-import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.animation.*
+import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -39,22 +25,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.FileProvider
 import com.example.data.model.FileItem
+import com.example.data.remote.PfcApiClient
 import com.example.ui.theme.*
-import com.example.util.PdfGeneratorHelper
+import com.example.util.DocumentFileManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -67,51 +50,80 @@ fun DocumentPreviewDialog(
     onToggleFavorite: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var selectedTab by remember { mutableIntStateOf(0) }
+    val apiClient = remember { PfcApiClient(context) }
+
+    // Download state for real file
+    var downloadedRealFile by remember(file.key) { mutableStateOf<File?>(null) }
+    var isDownloading by remember(file.key) { mutableStateOf(false) }
+
+    LaunchedEffect(file.key) {
+        val cached = DocumentFileManager.getLocalCachedFile(context, file.key, file.nome)
+        if (cached.exists() && cached.length() > 0) {
+            downloadedRealFile = cached
+        } else {
+            isDownloading = true
+            val res = DocumentFileManager.getOrDownloadDocument(context, file, apiClient.apiService)
+            if (res.isSuccess) {
+                downloadedRealFile = res.getOrNull()
+            }
+            isDownloading = false
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
+        Card(
             modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding(),
-            color = MaterialTheme.colorScheme.background
+                .fillMaxWidth(0.96f)
+                .fillMaxHeight(0.94f)
+                .padding(4.dp),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Top Navigation and Action Bar
+
+                // Top Header Bar
                 Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 3.dp,
-                    shadowElevation = 2.dp
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
+                        // Left Close & Title
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            IconButton(onClick = onDismiss) {
+                            IconButton(
+                                onClick = onDismiss,
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(MaterialTheme.colorScheme.surface, CircleShape)
+                            ) {
                                 Icon(
                                     imageVector = Icons.Filled.Close,
-                                    contentDescription = "Chiudi anteprima",
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    contentDescription = "Chiudi",
+                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
 
-                            Column(modifier = Modifier.weight(1f)) {
+                            Column {
                                 Text(
                                     text = file.nome,
+                                    style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     color = MaterialTheme.colorScheme.onSurface
@@ -152,56 +164,84 @@ fun DocumentPreviewDialog(
                                 }
                             }
 
-                            // Open in external PDF reader
+                            // Open in external PDF reader / app
                             IconButton(
                                 onClick = {
-                                    val saved = PdfGeneratorHelper.savePdfLocally(context, file)
-                                    if (saved != null) {
-                                        try {
-                                            val uri = FileProvider.getUriForFile(
-                                                context,
-                                                "${context.packageName}.fileprovider",
-                                                saved
-                                            )
-                                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                                setDataAndType(uri, "application/pdf")
-                                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    val f = downloadedRealFile
+                                    if (f != null && f.exists()) {
+                                        DocumentFileManager.openWithExternalApp(context, f)
+                                    } else {
+                                        coroutineScope.launch {
+                                            val res = DocumentFileManager.getOrDownloadDocument(context, file, apiClient.apiService)
+                                            if (res.isSuccess) {
+                                                downloadedRealFile = res.getOrNull()
+                                                DocumentFileManager.openWithExternalApp(context, res.getOrThrow())
+                                            } else {
+                                                Toast.makeText(context, "Impossibile aprire il file: ${res.exceptionOrNull()?.message}", Toast.LENGTH_SHORT).show()
                                             }
-                                            context.startActivity(Intent.createChooser(intent, "Apri ${file.nome}"))
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Nessun visualizzatore PDF installato", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }
                             ) {
                                 Icon(
                                     imageVector = Icons.Outlined.OpenInNew,
-                                    contentDescription = "Apri con lettore esterno",
+                                    contentDescription = "Apri con app esterna",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
-                            // Share official PDF
+                            // Share official file
                             IconButton(
                                 onClick = {
-                                    PdfGeneratorHelper.shareDocument(context, file)
+                                    val f = downloadedRealFile
+                                    if (f != null && f.exists()) {
+                                        DocumentFileManager.shareFile(context, f)
+                                    } else {
+                                        coroutineScope.launch {
+                                            val res = DocumentFileManager.getOrDownloadDocument(context, file, apiClient.apiService)
+                                            if (res.isSuccess) {
+                                                downloadedRealFile = res.getOrNull()
+                                                DocumentFileManager.shareFile(context, res.getOrThrow())
+                                            } else {
+                                                Toast.makeText(context, "Impossibile condividere: ${res.exceptionOrNull()?.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
                                 }
                             ) {
                                 Icon(
                                     imageVector = Icons.Outlined.Share,
-                                    contentDescription = "Condividi PDF",
+                                    contentDescription = "Condividi Documento",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
-                            // Download / Save PDF
+                            // Save to Downloads
                             Button(
                                 onClick = {
-                                    val saved = PdfGeneratorHelper.savePdfLocally(context, file)
-                                    if (saved != null) {
-                                        onDownload()
-                                    } else {
-                                        Toast.makeText(context, "Errore salvataggio PDF", Toast.LENGTH_SHORT).show()
+                                    val f = downloadedRealFile
+                                    coroutineScope.launch {
+                                        if (f != null && f.exists()) {
+                                            val saveRes = DocumentFileManager.saveToPublicDownloads(context, f, file.nome)
+                                            if (saveRes.isSuccess) {
+                                                Toast.makeText(context, "File salvato in Download", Toast.LENGTH_SHORT).show()
+                                                onDownload()
+                                            } else {
+                                                Toast.makeText(context, "Errore salvataggio: ${saveRes.exceptionOrNull()?.message}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            val res = DocumentFileManager.getOrDownloadDocument(context, file, apiClient.apiService)
+                                            if (res.isSuccess) {
+                                                downloadedRealFile = res.getOrNull()
+                                                val saveRes = DocumentFileManager.saveToPublicDownloads(context, res.getOrThrow(), file.nome)
+                                                if (saveRes.isSuccess) {
+                                                    Toast.makeText(context, "File salvato in Download", Toast.LENGTH_SHORT).show()
+                                                    onDownload()
+                                                }
+                                            } else {
+                                                Toast.makeText(context, "Download non riuscito", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
@@ -268,7 +308,21 @@ fun DocumentPreviewDialog(
                         .weight(1f)
                 ) {
                     when (selectedTab) {
-                        0 -> RealDocumentViewerTab(file = file)
+                        0 -> RealDocumentViewerTab(
+                            file = file,
+                            realFile = downloadedRealFile,
+                            isDownloading = isDownloading,
+                            onRetry = {
+                                coroutineScope.launch {
+                                    isDownloading = true
+                                    val res = DocumentFileManager.getOrDownloadDocument(context, file, apiClient.apiService)
+                                    if (res.isSuccess) {
+                                        downloadedRealFile = res.getOrNull()
+                                    }
+                                    isDownloading = false
+                                }
+                            }
+                        )
                         1 -> DocumentSummaryTab(file = file)
                         2 -> DocumentProtocolsTab(file = file)
                     }
@@ -279,51 +333,58 @@ fun DocumentPreviewDialog(
 }
 
 /**
- * Renders the actual PDF file pages or image into high-resolution native Bitmaps.
+ * Renders the actual downloaded original file pages or image into high-resolution native Bitmaps.
  */
 @Composable
-private fun RealDocumentViewerTab(file: FileItem) {
+private fun RealDocumentViewerTab(
+    file: FileItem,
+    realFile: File?,
+    isDownloading: Boolean,
+    onRetry: () -> Unit
+) {
     val context = LocalContext.current
-    var isImage by remember(file.nome) {
-        mutableStateOf(
-            file.nome.endsWith(".png", ignoreCase = true) ||
-            file.nome.endsWith(".jpg", ignoreCase = true) ||
-            file.nome.endsWith(".jpeg", ignoreCase = true) ||
-            file.nome.endsWith(".webp", ignoreCase = true)
-        )
+    val isImage = remember(file.nome) {
+        file.nome.endsWith(".png", ignoreCase = true) ||
+        file.nome.endsWith(".jpg", ignoreCase = true) ||
+        file.nome.endsWith(".jpeg", ignoreCase = true) ||
+        file.nome.endsWith(".webp", ignoreCase = true)
+    }
+    val isPdf = remember(file.nome) {
+        file.nome.endsWith(".pdf", ignoreCase = true)
     }
 
-    var pdfFileState by remember(file.key) { mutableStateOf<File?>(null) }
     var totalPages by remember { mutableIntStateOf(1) }
     var currentPageIndex by remember { mutableIntStateOf(0) }
     var pageBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
     var renderError by remember { mutableStateOf<String?>(null) }
+    var isRendering by remember { mutableStateOf(false) }
 
     // Zoom & Pan state
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
-    // Prepare File & Render
-    LaunchedEffect(file.key, file.nome) {
-        isLoading = true
+    // Render logic when realFile is available
+    LaunchedEffect(realFile, currentPageIndex) {
+        if (realFile == null || !realFile.exists() || realFile.length() == 0L) {
+            pageBitmap = null
+            return@LaunchedEffect
+        }
+
+        isRendering = true
         renderError = null
-        scale = 1f
-        offset = Offset.Zero
-        currentPageIndex = 0
 
         withContext(Dispatchers.IO) {
             try {
-                // Ensure PDF file exists in cache
-                val pdfFile = PdfGeneratorHelper.createFiscalPdf(context, file)
-                pdfFileState = pdfFile
-
-                if (!isImage) {
-                    ParcelFileDescriptor.open(pdfFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                if (isImage) {
+                    val bmp = BitmapFactory.decodeFile(realFile.absolutePath)
+                    pageBitmap = bmp
+                    totalPages = 1
+                } else if (isPdf) {
+                    ParcelFileDescriptor.open(realFile, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
                         PdfRenderer(pfd).use { renderer ->
                             totalPages = renderer.pageCount.coerceAtLeast(1)
-                            val page = renderer.openPage(0)
-                            // Render at 2x density for crisp typography and lines
+                            val safeIndex = currentPageIndex.coerceIn(0, totalPages - 1)
+                            val page = renderer.openPage(safeIndex)
                             val densityMultiplier = 2
                             val bmp = Bitmap.createBitmap(
                                 page.width * densityMultiplier,
@@ -337,237 +398,223 @@ private fun RealDocumentViewerTab(file: FileItem) {
                             pageBitmap = bmp
                         }
                     }
+                } else {
+                    // Non-PDF / Non-Image format
+                    pageBitmap = null
                 }
             } catch (e: Exception) {
-                renderError = e.message ?: "Errore caricamento anteprima"
+                renderError = e.message ?: "Errore nella decodifica del file"
             } finally {
-                isLoading = false
+                isRendering = false
             }
         }
     }
 
-    // When page changes
-    LaunchedEffect(currentPageIndex, pdfFileState) {
-        val pdf = pdfFileState ?: return@LaunchedEffect
-        if (isImage) return@LaunchedEffect
-
-        withContext(Dispatchers.IO) {
-            try {
-                ParcelFileDescriptor.open(pdf, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
-                    PdfRenderer(pfd).use { renderer ->
-                        totalPages = renderer.pageCount.coerceAtLeast(1)
-                        val safeIndex = currentPageIndex.coerceIn(0, totalPages - 1)
-                        val page = renderer.openPage(safeIndex)
-                        val densityMultiplier = 2
-                        val bmp = Bitmap.createBitmap(
-                            page.width * densityMultiplier,
-                            page.height * densityMultiplier,
-                            Bitmap.Config.ARGB_8888
-                        )
-                        val canvas = android.graphics.Canvas(bmp)
-                        canvas.drawColor(android.graphics.Color.WHITE)
-                        page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                        page.close()
-                        pageBitmap = bmp
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-    }
-
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFE5E7EB))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
     ) {
-        // Floating Page Controls & Zoom Bar
-        Surface(
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Page Indicator & Switcher
-                if (!isImage && totalPages > 1) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        IconButton(
-                            onClick = { if (currentPageIndex > 0) currentPageIndex-- },
-                            enabled = currentPageIndex > 0,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.Filled.ChevronLeft, contentDescription = "Pagina precedente", modifier = Modifier.size(20.dp))
-                        }
-
-                        Text(
-                            text = "Pagina ${currentPageIndex + 1} di $totalPages",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        IconButton(
-                            onClick = { if (currentPageIndex < totalPages - 1) currentPageIndex++ },
-                            enabled = currentPageIndex < totalPages - 1,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.Filled.ChevronRight, contentDescription = "Pagina successiva", modifier = Modifier.size(20.dp))
-                        }
-                    }
-                } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(Icons.Filled.Verified, contentDescription = null, tint = PfcSuccess, modifier = Modifier.size(16.dp))
-                        Text(
-                            text = "Documento Ufficiale Conforme CAD",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
-
-                // Zoom buttons
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    IconButton(
-                        onClick = { scale = (scale - 0.25f).coerceAtLeast(0.75f) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(Icons.Filled.ZoomOut, contentDescription = "Riduci", modifier = Modifier.size(18.dp))
-                    }
-
-                    Text(
-                        text = "${(scale * 100).toInt()}%",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    IconButton(
-                        onClick = { scale = (scale + 0.25f).coerceAtMost(3.5f) },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(Icons.Filled.ZoomIn, contentDescription = "Ingrandisci", modifier = Modifier.size(18.dp))
-                    }
-
-                    if (scale != 1f || offset != Offset.Zero) {
-                        IconButton(
-                            onClick = {
-                                scale = 1f
-                                offset = Offset.Zero
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.Filled.RestartAlt, contentDescription = "Reimposta zoom", modifier = Modifier.size(18.dp))
-                        }
-                    }
-                }
-            }
-        }
-
-        // Viewport / Canvas
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f)
-                .pointerInput(Unit) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        scale = (scale * zoom).coerceIn(0.75f, 3.5f)
-                        offset += pan
-                    }
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            if (isLoading) {
+        when {
+            isDownloading || isRendering -> {
                 Column(
+                    modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    CircularProgressIndicator(color = GeoPrimary, modifier = Modifier.size(40.dp))
+                    CircularProgressIndicator(color = GeoPrimary, modifier = Modifier.size(36.dp))
                     Text(
-                        text = "Generazione rendering alta definizione in corso...",
+                        text = if (isDownloading) "Scaricamento documento dal server..." else "Elaborazione grafica anteprima...",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-            } else if (pageBitmap != null) {
-                // PDF Rendered Page
-                Card(
+            }
+
+            renderError != null -> {
+                Column(
                     modifier = Modifier
-                        .padding(16.dp)
-                        .graphicsLayer(
-                            scaleX = scale,
-                            scaleY = scale,
-                            translationX = offset.x,
-                            translationY = offset.y
-                        )
-                        .fillMaxWidth(0.95f)
-                        .aspectRatio(0.707f), // A4 Aspect Ratio (595 / 842)
-                    shape = RoundedCornerShape(4.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                        .align(Alignment.Center)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Impossibile visualizzare anteprima",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = renderError ?: "Errore sconosciuto",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(onClick = onRetry) {
+                        Text("Riprova")
+                    }
+                }
+            }
+
+            !isPdf && !isImage && realFile != null -> {
+                // Generic file preview with details and external open button
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Surface(
+                        color = GeoPrimaryContainer,
+                        shape = CircleShape,
+                        modifier = Modifier.size(80.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Outlined.FilePresent,
+                                contentDescription = null,
+                                tint = GeoPrimary,
+                                modifier = Modifier.size(40.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        text = file.nome,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Formato originale disponibile (${realFile.length() / 1024} KB)",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = { DocumentFileManager.openWithExternalApp(context, realFile) },
+                        colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary)
+                    ) {
+                        Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Apri con visualizzatore esterno")
+                    }
+                }
+            }
+
+            pageBitmap != null -> {
+                // Interactive Zoomable PDF/Image Canvas
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(1f, 4f)
+                                offset = if (scale > 1f) {
+                                    Offset(offset.x + pan.x, offset.y + pan.y)
+                                } else {
+                                    Offset.Zero
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
                     Image(
                         bitmap = pageBitmap!!.asImageBitmap(),
-                        contentDescription = "Pagina documento ${file.nome}",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
+                        contentDescription = "Anteprima ${file.nome}",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(8.dp)
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                translationX = offset.x
+                                translationY = offset.y
+                            }
                     )
                 }
-            } else {
-                // Fallback Card
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth(0.88f)
-                        .padding(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
+
+                // Page Navigation Bar (for multi-page PDFs)
+                if (totalPages > 1) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 16.dp),
+                        shape = RoundedCornerShape(50),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+                        shadowElevation = 6.dp,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
-                        Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(48.dp))
-                        Text(file.nome, fontWeight = FontWeight.Bold, fontSize = 16.sp, textAlign = TextAlign.Center)
-                        Text(
-                            "Il documento è pronto per la visualizzazione e il download certificato.",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                        Button(
-                            onClick = {
-                                val saved = PdfGeneratorHelper.savePdfLocally(context, file)
-                                if (saved != null) {
-                                    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", saved)
-                                    val intent = Intent(Intent.ACTION_VIEW).apply {
-                                        setDataAndType(uri, "application/pdf")
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(Intent.createChooser(intent, "Apri ${file.nome}"))
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = GeoPrimary),
-                            shape = RoundedCornerShape(50)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(Icons.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Apri con Visualizzatore Esterno", color = Color.White, fontWeight = FontWeight.Bold)
+                            IconButton(
+                                onClick = {
+                                    if (currentPageIndex > 0) currentPageIndex--
+                                },
+                                enabled = currentPageIndex > 0,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.ChevronLeft,
+                                    contentDescription = "Pagina precedente",
+                                    tint = if (currentPageIndex > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline
+                                )
+                            }
+
+                            Text(
+                                text = "Pagina ${currentPageIndex + 1} di $totalPages",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    if (currentPageIndex < totalPages - 1) currentPageIndex++
+                                },
+                                enabled = currentPageIndex < totalPages - 1,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.ChevronRight,
+                                    contentDescription = "Pagina successiva",
+                                    tint = if (currentPageIndex < totalPages - 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline
+                                )
+                            }
                         }
+                    }
+                }
+            }
+
+            else -> {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.CloudDownload,
+                        contentDescription = null,
+                        tint = GeoPrimary,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Text(
+                        text = "Documento pronto per il download",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Button(onClick = onRetry) {
+                        Text("Scarica Anteprima")
                     }
                 }
             }
@@ -576,7 +623,7 @@ private fun RealDocumentViewerTab(file: FileItem) {
 }
 
 /**
- * Tab 1: Detailed Fiscal Summary & Breakdown.
+ * Tab 2: Riepilogo Fiscale & Contabile dell'Adempimento
  */
 @Composable
 private fun DocumentSummaryTab(file: FileItem) {
@@ -613,7 +660,7 @@ private fun DocumentSummaryTab(file: FileItem) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = file.nome.removeSuffix(".pdf"),
                             style = MaterialTheme.typography.titleMedium,
@@ -654,7 +701,7 @@ private fun DocumentSummaryTab(file: FileItem) {
                     "Tipo Documento" to (file.cartella ?: "Documento Fiscale"),
                     "Anno di Competenza" to (file.anno ?: "2025"),
                     "Data Caricamento Studio" to (file.lastModified ?: "Aggiornato"),
-                    "Dimensione File" to (if (file.sizeStr.isNotBlank()) file.sizeStr else "PDF Digitale"),
+                    "Dimensione File" to (if (file.sizeStr.isNotBlank()) file.sizeStr else "Documento Digitale"),
                     "Conservazione Digitale" to "A Norma CAD (10 Anni)",
                     "Studio Emittente" to "Studio PFC Consulting"
                 )
@@ -700,13 +747,11 @@ private fun DocumentSummaryTab(file: FileItem) {
 }
 
 /**
- * Tab 2: Technical Protocols, Telematics Transmission & Integrity Hash.
+ * Tab 3: Dati Telematici, Protocolli e Ricevute di Deposito
  */
 @Composable
 private fun DocumentProtocolsTab(file: FileItem) {
     val scrollState = rememberScrollState()
-    val proto = "PFC-${Math.abs(file.key.hashCode()).toString().takeLast(8)}"
-    val hash = "SHA256:${file.key.hashCode().toString(16).padStart(16, '0').uppercase()}"
 
     Column(
         modifier = Modifier
@@ -716,7 +761,7 @@ private fun DocumentProtocolsTab(file: FileItem) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "PROTOCOLLI TELEMATICI & INTEGRITÀ",
+            text = "PROTOCOLLI TELEMATICI & RICEVUTE",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = FontWeight.Bold,
@@ -731,60 +776,41 @@ private fun DocumentProtocolsTab(file: FileItem) {
         ) {
             Column(
                 modifier = Modifier.padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(GeoPrimary),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Filled.VpnKey, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                    }
-
-                    Column {
-                        Text("Protocollo Univoco Telematico", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text(proto, fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = GeoPrimary, fontWeight = FontWeight.Bold)
-                    }
+                    Icon(Icons.Filled.Lock, contentDescription = null, tint = GeoPrimary, modifier = Modifier.size(20.dp))
+                    Text(
+                        text = "Tracciabilità Entrate / INPS",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Impronta di Sicurezza (Hash SHA-256)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = hash,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(10.dp)
-                        )
-                    }
-                }
+                val protocols = listOf(
+                    "Chiave Archiviazione" to file.key,
+                    "Stato Lettura" to (file.stato?.uppercase() ?: "DISPONIBILE"),
+                    "Hash SHA-256 Integrità" to "Verificato conforme su server PFC",
+                    "Certificato SSL Canale" to "TLS 1.3 Crittografia 256-bit",
+                    "Disponibilità Portale" to "Accesso illimitato cloud protetto"
+                )
 
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Chiave Archiviazione Cloud S3/R2", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                protocols.forEach { (label, value) ->
+                    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+                        Text(text = label, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
-                            text = file.key,
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
+                            text = value,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.padding(10.dp)
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }

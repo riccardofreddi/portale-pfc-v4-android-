@@ -49,10 +49,13 @@ data class Cartella(
     @Json(name = "nome") val nome: String,
     @Json(name = "count") val count: Int? = 0,
     @Json(name = "nuovi") val nuovi: Int? = 0,
+    @Json(name = "nNuovi") val nNuovi: Int? = 0,
     @Json(name = "hasScadenza") val hasScadenza: Boolean? = false,
     @Json(name = "scadenzaPagata") val scadenzaPagata: Boolean? = false,
     @Json(name = "scadenzaData") val scadenzaData: String? = null
-)
+) {
+    val realNuovi: Int get() = (nuovi ?: 0).coerceAtLeast(nNuovi ?: 0)
+}
 
 @JsonClass(generateAdapter = true)
 data class ListResponse(
@@ -93,6 +96,35 @@ data class PreferitoToggleRequest(
 data class PreferitoToggleResponse(
     @Json(name = "ok") val ok: Boolean,
     @Json(name = "isPreferito") val isPreferito: Boolean
+)
+
+@JsonClass(generateAdapter = true)
+data class ZipRequest(
+    @Json(name = "keys") val keys: List<String>,
+    @Json(name = "zipName") val zipName: String = "documenti.zip"
+)
+
+// === Scadenze ===
+
+@JsonClass(generateAdapter = true)
+data class ScadenzaItem(
+    @Json(name = "id") val id: String? = null,
+    @Json(name = "filePath") val filePath: String? = null,
+    @Json(name = "titolo") val titolo: String? = null,
+    @Json(name = "dataScadenza") val dataScadenza: String? = null,
+    @Json(name = "pagata") val pagata: Boolean = false,
+    @Json(name = "anticipoGiorni") val anticipoGiorni: Int? = 10
+)
+
+@JsonClass(generateAdapter = true)
+data class ScadenzeListResponse(
+    @Json(name = "scadenze") val scadenze: List<ScadenzaItem> = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class PagaScadenzaRequest(
+    @Json(name = "filePath") val filePath: String,
+    @Json(name = "pagata") val pagata: Boolean = true
 )
 
 // === Messaggi ===

@@ -374,7 +374,7 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     onDeleteDocument = { viewModel.deleteCassettoDocument(it) },
                                     onOpenFilePreview = { viewModel.setPreviewFile(it) },
                                     onDownloadDocument = { file ->
-                                        viewModel.showSnackbar("Scaricato in download: ${file.nome}")
+                                        viewModel.downloadCassettoDocument(file)
                                     }
                                 )
                             }

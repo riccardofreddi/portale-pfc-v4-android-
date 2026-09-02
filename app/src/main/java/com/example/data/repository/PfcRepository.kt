@@ -4,10 +4,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import com.example.data.local.PfcDatabase
 import com.example.data.local.entity.*
 import com.example.data.model.*
 import com.example.data.remote.PfcApiClient
+import com.example.util.DocumentFileManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
@@ -36,7 +38,7 @@ class PfcRepository(private val context: Context) {
     val auditDao = db.auditDao()
 
     fun isLoggedIn(): Boolean {
-        return prefs.getBoolean("is_logged_in", false)
+        return prefs.getBoolean("is_logged_in", false) && apiClient.hasValidSession()
     }
 
     fun getCurrentUser(): User? {
@@ -55,28 +57,60 @@ class PfcRepository(private val context: Context) {
             .apply()
     }
 
+    /**
+     * Checks if a valid authenticated session exists with backend.
+     */
+    suspend fun checkExistingSession(): User? = withContext(Dispatchers.IO) {
+        if (!apiClient.hasValidSession()) {
+            return@withContext null
+        }
+        try {
+            val meRes = apiClient.apiService.getMe()
+            if (meRes.isSuccessful && meRes.body()?.user != null) {
+                val user = meRes.body()!!.user!!
+                saveUser(user)
+                return@withContext user
+            }
+        } catch (e: Exception) {
+            Log.w("PfcRepository", "Session check failed: ${e.message}")
+        }
+        getCurrentUser()
+    }
+
     suspend fun login(username: String, password: String): Result<User> = withContext(Dispatchers.IO) {
         try {
-            // Clear any previously cached dummy documents
-            documentDao.clearAll()
+            val cleanUser = username.trim()
+            val cleanPass = password.trim()
 
-            val response = apiClient.apiService.login(LoginRequest(username.trim(), password))
+            val response = apiClient.apiService.login(LoginRequest(cleanUser, cleanPass))
             if (response.isSuccessful && response.body()?.ok == true) {
-                val meRes = apiClient.apiService.getMe()
-                val user = meRes.body()?.user ?: User(
-                    username = username.trim(),
-                    name = username.trim().replaceFirstChar { it.uppercase() },
-                    role = "client"
-                )
+                // Fetch real user profile from backend /api/auth/me
+                var user: User? = null
+                try {
+                    val meRes = apiClient.apiService.getMe()
+                    if (meRes.isSuccessful && meRes.body()?.user != null) {
+                        user = meRes.body()!!.user
+                    }
+                } catch (_: Exception) {}
+
+                if (user == null) {
+                    user = User(
+                        username = cleanUser,
+                        name = cleanUser.replaceFirstChar { it.uppercase() },
+                        role = "client"
+                    )
+                }
+
                 saveUser(user)
                 syncAll()
                 logAction("login", "Accesso eseguito al Portale PFC: @${user.username}")
                 return@withContext Result.success(user)
             } else {
-                val errorMsg = response.body()?.error ?: "Credenziali non valide o errore di autenticazione (${response.code()})"
+                val errorMsg = response.body()?.error ?: "Credenziali non valide (${response.code()})"
                 return@withContext Result.failure(Exception(errorMsg))
             }
         } catch (e: Exception) {
+            Log.e("PfcRepository", "Login exception: ${e.message}")
             return@withContext Result.failure(Exception("Impossibile connettersi al server (${e.localizedMessage ?: "Errore di rete"}). Verifica la connessione."))
         }
     }
@@ -107,20 +141,52 @@ class PfcRepository(private val context: Context) {
         if (cleanTarget.isNotBlank() && cleanCartella.contains(cleanTarget)) return true
         if (cleanCartella.isNotBlank() && cleanTarget.contains(cleanCartella)) return true
 
-        // 3. Key path matching (e.g. key is "freddi/2025/f24/file.pdf" or "2025/f24/doc.pdf")
-        if (cleanTarget.isNotBlank() && (key.lowercase().contains("/$cleanTarget/") || key.lowercase().contains("/$normTarget/"))) return true
+        // 3. Category prefixes matching (e.g. "f24 e versamenti" vs "f24")
+        if (cleanTarget.startsWith("f24") && cleanCartella.startsWith("f24")) return true
+        if (cleanTarget.startsWith("dichiarazion") && cleanCartella.startsWith("dichiarazion")) return true
+        if (cleanTarget.startsWith("bilanc") && cleanCartella.startsWith("bilanc")) return true
+        if (cleanTarget.startsWith("certificazion") && cleanCartella.startsWith("certificazion")) return true
+
+        // 4. Key path matching (e.g. key is "freddi/2025/f24/file.pdf" or "2025/f24/doc.pdf")
+        val lowerKey = key.lowercase()
+        if (cleanTarget.isNotBlank() && (lowerKey.contains("/$cleanTarget/") || lowerKey.contains("/$normTarget/"))) return true
+
+        // 5. Special keywords in key path
+        if (cleanTarget.startsWith("f24") && (lowerKey.contains("/f24/") || lowerKey.contains("/f24_") || lowerKey.contains("f24"))) return true
+        if (cleanTarget.startsWith("dichiarazion") && (lowerKey.contains("/dichiarazioni/") || lowerKey.contains("/dichiarazione/") || lowerKey.contains("dichiaraz"))) return true
+        if (cleanTarget.startsWith("bilanc") && (lowerKey.contains("/bilanci/") || lowerKey.contains("/bilancio/"))) return true
 
         return false
     }
 
     suspend fun fetchArchivioData(year: String?): Triple<List<String>, List<Cartella>, List<FileItem>> = withContext(Dispatchers.IO) {
-        val targetYr = year ?: "2025"
+        val currentUser = getCurrentUser()?.username
+        val currentYear = Calendar.getInstance().get(Calendar.YEAR).toString()
+        var targetYr = year ?: currentYear
+
         try {
-            val res = apiClient.apiService.listDocumenti(year = targetYr, anno = targetYr)
+            // 1. Fetch available years if not already present
+            val yearsRes = apiClient.apiService.listDocumenti(username = currentUser)
+            val serverYears = if (yearsRes.isSuccessful && !yearsRes.body()?.anni.isNullOrEmpty()) {
+                yearsRes.body()!!.anni!!
+            } else {
+                emptyList()
+            }
+
+            if (serverYears.isNotEmpty() && !serverYears.contains(targetYr)) {
+                targetYr = serverYears.first()
+            }
+
+            // 2. Fetch folders and documents for target year
+            val res = apiClient.apiService.listDocumenti(
+                username = currentUser,
+                anno = targetYr,
+                year = targetYr
+            )
+
             if (res.isSuccessful && res.body() != null) {
                 val body = res.body()!!
-                val serverYears = body.anni ?: emptyList()
-                var serverCartelle = body.cartelle ?: emptyList()
+                val serverCartelle = (body.cartelle ?: emptyList()).toMutableList()
                 val serverFiles = body.files ?: emptyList()
 
                 if (serverFiles.isNotEmpty()) {
@@ -146,32 +212,45 @@ class PfcRepository(private val context: Context) {
                     documentDao.insertAll(entities)
                 }
 
+                // If folders not returned explicitly in body, group files
                 if (serverCartelle.isEmpty() && serverFiles.isNotEmpty()) {
-                    serverCartelle = serverFiles.groupBy { it.cartella ?: "Documenti" }.map { (fName, fList) ->
+                    val grouped = serverFiles.groupBy { it.cartella ?: "Documenti" }.map { (fName, fList) ->
                         Cartella(
                             nome = fName,
                             count = fList.size,
                             nuovi = fList.count { it.stato == "nuovo" }
                         )
                     }
+                    serverCartelle.addAll(grouped)
                 }
 
-                if (serverYears.isNotEmpty() || serverCartelle.isNotEmpty() || serverFiles.isNotEmpty()) {
-                    val mappedFiles = if (serverFiles.isNotEmpty()) {
-                        serverFiles
-                    } else {
-                        getAllDocumentsForYear(targetYr)
+                // Ensure standard fiscal folders exist alongside admin-created folders in V2
+                val standardFolders = listOf("F24", "Dichiarazioni", "Bilanci", "Varie")
+                val existingLowerNames = serverCartelle.map { it.nome.trim().lowercase() }.toSet()
+                for (std in standardFolders) {
+                    val alreadyPresent = existingLowerNames.any {
+                        it == std.lowercase() || it.startsWith(std.lowercase())
                     }
-                    return@withContext Triple(
-                        if (serverYears.isNotEmpty()) serverYears else listOf(targetYr),
-                        serverCartelle,
-                        mappedFiles
-                    )
+                    if (!alreadyPresent) {
+                        val countInDocs = serverFiles.count { matchesFolder(it.cartella, it.key, it.nome, std) }
+                        serverCartelle.add(
+                            Cartella(
+                                nome = std,
+                                count = countInDocs,
+                                nuovi = serverFiles.count { matchesFolder(it.cartella, it.key, it.nome, std) && it.stato == "nuovo" }
+                            )
+                        )
+                    }
                 }
-            }
-        } catch (_: Exception) {}
 
-        // Fallback to local cache (offline mode) without fake mock data
+                val allYears = if (serverYears.isNotEmpty()) serverYears else listOf(targetYr)
+                return@withContext Triple(allYears, serverCartelle, serverFiles)
+            }
+        } catch (e: Exception) {
+            Log.e("PfcRepository", "fetchArchivioData error: ${e.message}")
+        }
+
+        // Fallback to local Room cache (offline mode)
         val cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
         val cachedYears = cachedDocs.map { it.anno }.distinct().sortedDescending()
         val effectiveYear = if (cachedYears.contains(targetYr)) targetYr else cachedYears.firstOrNull() ?: targetYr
@@ -234,17 +313,14 @@ class PfcRepository(private val context: Context) {
     }
 
     suspend fun getAvailableYears(): List<String> = withContext(Dispatchers.IO) {
+        val currentUser = getCurrentUser()?.username
         try {
-            val res = apiClient.apiService.listDocumenti()
-            if (res.isSuccessful && res.body()?.anni != null) {
-                val serverYears = res.body()!!.anni!!
-                if (serverYears.isNotEmpty()) {
-                    return@withContext serverYears
-                }
+            val res = apiClient.apiService.listDocumenti(username = currentUser)
+            if (res.isSuccessful && !res.body()?.anni.isNullOrEmpty()) {
+                return@withContext res.body()!!.anni!!
             }
         } catch (_: Exception) {}
 
-        // Fallback to years present in local cache
         val cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
         val cachedYears = cachedDocs.map { it.anno }.distinct().sortedDescending()
         if (cachedYears.isNotEmpty()) {
@@ -255,14 +331,18 @@ class PfcRepository(private val context: Context) {
     }
 
     suspend fun getCartelle(year: String): List<Cartella> = withContext(Dispatchers.IO) {
+        val currentUser = getCurrentUser()?.username
         try {
-            val res = apiClient.apiService.listDocumenti(year = year, anno = year)
-            if (res.isSuccessful && res.body()?.cartelle != null && res.body()!!.cartelle!!.isNotEmpty()) {
+            val res = apiClient.apiService.listDocumenti(
+                username = currentUser,
+                anno = year,
+                year = year
+            )
+            if (res.isSuccessful && !res.body()?.cartelle.isNullOrEmpty()) {
                 return@withContext res.body()!!.cartelle!!
             }
         } catch (_: Exception) {}
 
-        // Load distinct folders from local cache for selected year
         val cachedDocs = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
         val forYear = cachedDocs.filter { it.anno == year }
         if (forYear.isNotEmpty()) {
@@ -279,13 +359,23 @@ class PfcRepository(private val context: Context) {
         emptyList()
     }
 
+    /**
+     * Retrieves files for a specific folder from the backend.
+     * Passes username, year and folder query parameters matching the V2 backend contract.
+     */
     suspend fun getFiles(year: String, folder: String): List<FileItem> = withContext(Dispatchers.IO) {
+        val currentUser = getCurrentUser()?.username
         try {
-            // 1. Try querying backend with specific folder
-            val res = apiClient.apiService.listDocumenti(year = year, anno = year, folder = folder, cartella = folder)
-            if (res.isSuccessful && res.body()?.files != null && res.body()!!.files!!.isNotEmpty()) {
+            // 1. Query backend for this specific folder
+            val res = apiClient.apiService.listDocumenti(
+                username = currentUser,
+                anno = year,
+                cartella = folder,
+                year = year,
+                folder = folder
+            )
+            if (res.isSuccessful && !res.body()?.files.isNullOrEmpty()) {
                 val list = res.body()!!.files!!
-                // Sync with DB
                 val entities = list.map { f ->
                     CachedDocumentEntity(
                         key = f.key,
@@ -303,9 +393,13 @@ class PfcRepository(private val context: Context) {
                 return@withContext list
             }
 
-            // 2. If folder-specific query didn't return files, fetch all files for year and filter
-            val yearRes = apiClient.apiService.listDocumenti(year = year, anno = year)
-            if (yearRes.isSuccessful && yearRes.body()?.files != null && yearRes.body()!!.files!!.isNotEmpty()) {
+            // 2. Query backend for the year and filter locally by folder
+            val yearRes = apiClient.apiService.listDocumenti(
+                username = currentUser,
+                anno = year,
+                year = year
+            )
+            if (yearRes.isSuccessful && !yearRes.body()?.files.isNullOrEmpty()) {
                 val allFiles = yearRes.body()!!.files!!
                 val matchedFiles = allFiles.filter { f ->
                     matchesFolder(f.cartella, f.key, f.nome, folder)
@@ -328,9 +422,11 @@ class PfcRepository(private val context: Context) {
                     return@withContext matchedFiles
                 }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {
+            Log.e("PfcRepository", "Error fetching files for $folder: ${e.message}")
+        }
 
-        // Fallback to local Room cache
+        // 3. Fallback to local Room cache
         val cached = documentDao.getAllDocuments().firstOrNull() ?: emptyList()
         val forYear = cached.filter { it.anno == year }
         val matched = forYear.filter { doc ->
@@ -375,9 +471,10 @@ class PfcRepository(private val context: Context) {
 
     suspend fun searchDocuments(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
+        val currentUser = getCurrentUser()?.username
         val cleanQuery = query.trim().lowercase()
         try {
-            val res = apiClient.apiService.search(query.trim())
+            val res = apiClient.apiService.search(query = query.trim(), username = currentUser)
             if (res.isSuccessful && res.body()?.results != null && res.body()!!.results.isNotEmpty()) {
                 return@withContext res.body()!!.results
             }
@@ -402,22 +499,48 @@ class PfcRepository(private val context: Context) {
         }
     }
 
-    suspend fun downloadDocumentFile(key: String, destFile: File): Boolean = withContext(Dispatchers.IO) {
+    /**
+     * Downloads real original document file to local storage.
+     */
+    suspend fun downloadDocumentFile(fileItem: FileItem): Result<File> = withContext(Dispatchers.IO) {
+        val result = DocumentFileManager.getOrDownloadDocument(context, fileItem, apiClient.apiService)
+        if (result.isSuccess) {
+            markDocumentScaricato(fileItem)
+        }
+        result
+    }
+
+    /**
+     * Downloads multiple documents as a single ZIP archive from backend.
+     */
+    suspend fun downloadBatchZip(keys: List<String>, zipName: String): Result<File> = withContext(Dispatchers.IO) {
+        val result = DocumentFileManager.downloadBatchZip(context, keys, zipName, apiClient.apiService)
+        if (result.isSuccess) {
+            logAction("download_zip", "Scaricato archivio ZIP di ${keys.size} documenti: $zipName")
+        }
+        result
+    }
+
+    // === Scadenze ===
+
+    suspend fun getScadenze(): List<ScadenzaItem> = withContext(Dispatchers.IO) {
         try {
-            val res = apiClient.apiService.downloadDocument(key)
-            if (res.isSuccessful && res.body() != null) {
-                val body = res.body()!!
-                body.byteStream().use { input ->
-                    FileOutputStream(destFile).use { output ->
-                        input.copyTo(output)
-                    }
-                }
-                logAction("download", "Scaricato file originale: $key")
+            val res = apiClient.apiService.getScadenzeList()
+            if (res.isSuccessful && res.body()?.scadenze != null) {
+                return@withContext res.body()!!.scadenze
+            }
+        } catch (_: Exception) {}
+        emptyList()
+    }
+
+    suspend fun pagaScadenza(filePath: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val res = apiClient.apiService.pagaScadenza(PagaScadenzaRequest(filePath = filePath, pagata = true))
+            if (res.isSuccessful && res.body()?.ok == true) {
+                logAction("scadenza_paga", "Scadenza segnata come pagata per $filePath")
                 return@withContext true
             }
-        } catch (e: Exception) {
-            android.util.Log.e("PfcRepository", "Error downloading document from backend: ${e.message}")
-        }
+        } catch (_: Exception) {}
         false
     }
 
@@ -428,8 +551,9 @@ class PfcRepository(private val context: Context) {
     }
 
     suspend fun syncMessaggi() = withContext(Dispatchers.IO) {
+        val currentUser = getCurrentUser()?.username
         try {
-            val res = apiClient.apiService.getMessaggi()
+            val res = apiClient.apiService.getMessaggi(username = currentUser)
             if (res.isSuccessful && res.body()?.messaggi != null) {
                 val entities = res.body()!!.messaggi.map { map ->
                     CachedMessaggioEntity(
@@ -453,14 +577,23 @@ class PfcRepository(private val context: Context) {
     suspend fun setMessaggioLetto(id: String, letto: Boolean) = withContext(Dispatchers.IO) {
         messaggioDao.setLetto(id, letto)
         try {
-            apiClient.apiService.patchMessaggio(mapOf("id" to id, "letto" to letto))
+            apiClient.apiService.patchMessaggioAction(id = id, action = "segna_letti")
+        } catch (_: Exception) {}
+    }
+
+    suspend fun markAllMessaggiLetti() = withContext(Dispatchers.IO) {
+        try {
+            apiClient.apiService.patchMessaggioAction(action = "segna_letti")
         } catch (_: Exception) {}
     }
 
     suspend fun setMessaggioArchiviato(id: String, archiviato: Boolean) = withContext(Dispatchers.IO) {
         messaggioDao.setArchiviato(id, archiviato)
         try {
-            apiClient.apiService.patchMessaggio(mapOf("id" to id, "archiviato" to archiviato))
+            apiClient.apiService.patchMessaggioAction(
+                id = id,
+                action = if (archiviato) "archivia" else "dearchivia"
+            )
         } catch (_: Exception) {}
         logAction("messaggio", "${if (archiviato) "Archiviato" else "Ripristinato"} messaggio: #$id")
     }
@@ -491,8 +624,9 @@ class PfcRepository(private val context: Context) {
     }
 
     suspend fun syncCassetto() = withContext(Dispatchers.IO) {
+        val currentUser = getCurrentUser()?.username
         try {
-            val res = apiClient.apiService.getCassettoList()
+            val res = apiClient.apiService.getCassettoList(username = currentUser)
             if (res.isSuccessful && res.body()?.files != null) {
                 val entities = res.body()!!.files.map {
                     CachedCassettoEntity(
@@ -510,11 +644,12 @@ class PfcRepository(private val context: Context) {
     }
 
     suspend fun uploadCassettoFile(file: File, categoria: String = "Altro"): Result<Unit> = withContext(Dispatchers.IO) {
+        val currentUser = getCurrentUser()?.username
         try {
             val requestFile = file.asRequestBody("application/octet-stream".toMediaTypeOrNull())
             val filePart = MultipartBody.Part.createFormData("file", file.name, requestFile)
 
-            val res = apiClient.apiService.uploadCassetto(filePart)
+            val res = apiClient.apiService.uploadCassetto(file = filePart, username = currentUser)
             if (res.isSuccessful) {
                 val key = res.body()?.key ?: "cassetto/${file.name}"
                 val df = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALY)
@@ -608,21 +743,28 @@ class PfcRepository(private val context: Context) {
     suspend fun markNotificaLetta(id: String) = withContext(Dispatchers.IO) {
         notificaDao.markAsRead(id)
         try {
-            apiClient.apiService.updateNotifiche(mapOf("action" to "segnaLetta", "id" to id))
+            apiClient.apiService.postNotificheAction(action = "segna_lette", id = id)
         } catch (_: Exception) {}
     }
 
     suspend fun markAllNotificheLette() = withContext(Dispatchers.IO) {
         notificaDao.markAllAsRead()
         try {
-            apiClient.apiService.updateNotifiche(mapOf("action" to "segnaTutteLette"))
+            apiClient.apiService.postNotificheAction(action = "segna_lette")
         } catch (_: Exception) {}
     }
 
     suspend fun clearNotificheLette() = withContext(Dispatchers.IO) {
         notificaDao.deleteRead()
         try {
-            apiClient.apiService.updateNotifiche(mapOf("action" to "pulisciLette"))
+            apiClient.apiService.postNotificheAction(action = "pulisci_lette")
+        } catch (_: Exception) {}
+    }
+
+    suspend fun clearAllNotifiche() = withContext(Dispatchers.IO) {
+        notificaDao.clearAll()
+        try {
+            apiClient.apiService.postNotificheAction(action = "pulisci_tutte")
         } catch (_: Exception) {}
     }
 
@@ -667,9 +809,9 @@ class PfcRepository(private val context: Context) {
         try {
             val deviceName = "Android ${Build.MANUFACTURER} ${Build.MODEL}"
             apiClient.apiService.registerFcm(FcmTokenRequest(token = token, device = deviceName))
-            android.util.Log.d("PfcRepository", "FCM token registered with backend successfully")
+            Log.d("PfcRepository", "FCM token registered with backend successfully")
         } catch (e: Exception) {
-            android.util.Log.e("PfcRepository", "Failed to register FCM token with backend: ${e.message}")
+            Log.e("PfcRepository", "Failed to register FCM token with backend: ${e.message}")
         }
     }
 

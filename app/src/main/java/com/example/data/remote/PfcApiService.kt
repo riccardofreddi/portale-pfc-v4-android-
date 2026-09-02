@@ -20,10 +20,11 @@ interface PfcApiService {
 
     @GET("api/documenti/list")
     suspend fun listDocumenti(
-        @Query("year") year: String? = null,
+        @Query("username") username: String? = null,
         @Query("anno") anno: String? = null,
-        @Query("folder") folder: String? = null,
-        @Query("cartella") cartella: String? = null
+        @Query("cartella") cartella: String? = null,
+        @Query("year") year: String? = null,
+        @Query("folder") folder: String? = null
     ): Response<ListResponse>
 
     @GET("api/preferiti")
@@ -33,13 +34,25 @@ interface PfcApiService {
     suspend fun togglePreferito(@Body req: PreferitoToggleRequest): Response<PreferitoToggleResponse>
 
     @GET("api/ricerca")
-    suspend fun search(@Query("q") query: String): Response<SearchResponse>
+    suspend fun search(
+        @Query("q") query: String,
+        @Query("username") username: String? = null
+    ): Response<SearchResponse>
 
     @GET("api/messaggi")
-    suspend fun getMessaggi(): Response<MessaggiRawResponse>
+    suspend fun getMessaggi(@Query("username") username: String? = null): Response<MessaggiRawResponse>
+
+    @PATCH("api/messaggi")
+    suspend fun patchMessaggioAction(
+        @Query("id") id: String? = null,
+        @Query("action") action: String
+    ): Response<GenericOkResponse>
 
     @PATCH("api/messaggi")
     suspend fun patchMessaggio(@Body req: Map<String, @JvmSuppressWildcards Any>): Response<GenericOkResponse>
+
+    @DELETE("api/messaggi")
+    suspend fun deleteMessaggio(@Query("id") id: String): Response<GenericOkResponse>
 
     @Multipart
     @POST("api/risposte/upload")
@@ -49,12 +62,13 @@ interface PfcApiService {
     ): Response<GenericOkResponse>
 
     @GET("api/cassetto/list")
-    suspend fun getCassettoList(): Response<CassettoListResponse>
+    suspend fun getCassettoList(@Query("username") username: String? = null): Response<CassettoListResponse>
 
     @Multipart
     @POST("api/cassetto/upload")
     suspend fun uploadCassetto(
-        @Part file: MultipartBody.Part
+        @Part file: MultipartBody.Part,
+        @Query("username") username: String? = null
     ): Response<GenericOkResponse>
 
     @POST("api/cassetto/delete")
@@ -67,7 +81,23 @@ interface PfcApiService {
     suspend fun getNotifiche(): Response<NotificheResponse>
 
     @POST("api/notifiche")
+    suspend fun postNotificheAction(
+        @Query("action") action: String,
+        @Query("id") id: String? = null,
+        @Query("tipi") tipi: String? = null,
+        @Query("year") year: String? = null,
+        @Query("folder") folder: String? = null
+    ): Response<GenericOkResponse>
+
+    @POST("api/notifiche")
     suspend fun updateNotifiche(@Body req: Map<String, @JvmSuppressWildcards Any>): Response<GenericOkResponse>
+
+    // Scadenze
+    @GET("api/documenti/scadenza/list")
+    suspend fun getScadenzeList(): Response<ScadenzeListResponse>
+
+    @POST("api/documenti/scadenza/paga")
+    suspend fun pagaScadenza(@Body req: PagaScadenzaRequest): Response<GenericOkResponse>
 
     @GET("api/audit/me")
     suspend fun getAuditLogs(
@@ -90,4 +120,12 @@ interface PfcApiService {
     @GET("api/documenti/download")
     @Streaming
     suspend fun downloadDocument(@Query("key") key: String): Response<ResponseBody>
+
+    @GET("api/documenti/preview")
+    @Streaming
+    suspend fun previewDocument(@Query("key") key: String): Response<ResponseBody>
+
+    @POST("api/documenti/zip")
+    @Streaming
+    suspend fun downloadZip(@Body req: ZipRequest): Response<ResponseBody>
 }

@@ -612,25 +612,14 @@ class PfcRepository(private val context: Context) {
 
     suspend fun setMessaggioLetto(id: String, letto: Boolean) = withContext(Dispatchers.IO) {
         messaggioDao.setLetto(id, letto)
-        try {
-            apiClient.apiService.patchMessaggioAction(id = id, action = "segna_letti")
-        } catch (_: Exception) {}
     }
 
     suspend fun markAllMessaggiLetti() = withContext(Dispatchers.IO) {
-        try {
-            apiClient.apiService.patchMessaggioAction(action = "segna_letti")
-        } catch (_: Exception) {}
+        // Local only in Room database
     }
 
     suspend fun setMessaggioArchiviato(id: String, archiviato: Boolean) = withContext(Dispatchers.IO) {
         messaggioDao.setArchiviato(id, archiviato)
-        try {
-            apiClient.apiService.patchMessaggioAction(
-                id = id,
-                action = if (archiviato) "archivia" else "dearchivia"
-            )
-        } catch (_: Exception) {}
         logAction("messaggio", "${if (archiviato) "Archiviato" else "Ripristinato"} messaggio: #$id")
     }
 
@@ -771,11 +760,17 @@ class PfcRepository(private val context: Context) {
                     val rawFolder = map["folder"]?.toString() ?: map["cartella"]?.toString()
                     val rawYear = map["year"]?.toString() ?: map["anno"]?.toString()
 
-                    val defaultTitolo = when (rawTipo.lowercase()) {
-                        "document", "documento", "documento_nuovo", "f24" -> if (!rawFolder.isNullOrBlank()) "Nuovo Documento: $rawFolder" else "Nuovo Documento Fiscale"
-                        "message", "messaggio" -> "Nuovo Messaggio dallo Studio"
-                        "richiesta_upload" -> "Richiesta Documenti dallo Studio"
-                        "deadline", "scadenza", "scadenza_fiscale" -> "Promemoria Scadenza Fiscale"
+                    val rawLower = rawTipo.lowercase()
+                    val isUploadReq = rawLower.contains("upload") || rawLower.contains("richiest")
+
+                    val defaultTitolo = when {
+                        isUploadReq -> "Messaggio con richiesta file"
+                        rawLower.contains("document") || rawLower.contains("f24") ->
+                            if (!rawFolder.isNullOrBlank()) "Nuovo Documento: $rawFolder" else "Nuovo Documento Fiscale"
+                        rawLower.contains("message") || rawLower.contains("messag") ->
+                            "Nuovo Messaggio dallo Studio"
+                        rawLower.contains("deadline") || rawLower.contains("scadenz") ->
+                            "Promemoria Scadenza Fiscale"
                         else -> "Comunicazione Studio PFC"
                     }
 
@@ -785,11 +780,14 @@ class PfcRepository(private val context: Context) {
                         ?: map["subject"]?.toString()
                         ?: defaultTitolo
 
-                    val defaultCorpo = when (rawTipo.lowercase()) {
-                        "document", "documento", "documento_nuovo", "f24" -> "Lo Studio PFC ha caricato un nuovo documento disponibile nel tuo archivio${if (!rawFolder.isNullOrBlank()) " ($rawFolder)" else ""}."
-                        "message", "messaggio" -> "Hai una nuova comunicazione dallo Studio PFC da consultare."
-                        "richiesta_upload" -> "È richiesto l'invio di un documento o fattura allo studio."
-                        "deadline", "scadenza" -> "Verifica i modelli F24 e adempimenti in scadenza."
+                    val defaultCorpo = when {
+                        isUploadReq -> "Lo Studio PFC ha inviato un messaggio con richiesta di invio file. Apri la sezione Messaggi per visualizzarla e allegare il documento."
+                        rawLower.contains("document") || rawLower.contains("f24") ->
+                            "Lo Studio PFC ha caricato un nuovo documento disponibile nel tuo archivio${if (!rawFolder.isNullOrBlank()) " ($rawFolder)" else ""}."
+                        rawLower.contains("message") || rawLower.contains("messag") ->
+                            "Hai una nuova comunicazione dallo Studio PFC da consultare."
+                        rawLower.contains("deadline") || rawLower.contains("scadenz") ->
+                            "Verifica i modelli F24 e adempimenti in scadenza."
                         else -> "Ci sono nuovi aggiornamenti contabili e amministrativi per la tua azienda."
                     }
 
@@ -834,30 +832,18 @@ class PfcRepository(private val context: Context) {
 
     suspend fun markNotificaLetta(id: String) = withContext(Dispatchers.IO) {
         notificaDao.markAsRead(id)
-        try {
-            apiClient.apiService.postNotificheAction(action = "segna_lette", id = id)
-        } catch (_: Exception) {}
     }
 
     suspend fun markAllNotificheLette() = withContext(Dispatchers.IO) {
         notificaDao.markAllAsRead()
-        try {
-            apiClient.apiService.postNotificheAction(action = "segna_lette")
-        } catch (_: Exception) {}
     }
 
     suspend fun clearNotificheLette() = withContext(Dispatchers.IO) {
         notificaDao.deleteRead()
-        try {
-            apiClient.apiService.postNotificheAction(action = "pulisci_lette")
-        } catch (_: Exception) {}
     }
 
     suspend fun clearAllNotifiche() = withContext(Dispatchers.IO) {
         notificaDao.clearAll()
-        try {
-            apiClient.apiService.postNotificheAction(action = "pulisci_tutte")
-        } catch (_: Exception) {}
     }
 
     // === Attività / Audit ===

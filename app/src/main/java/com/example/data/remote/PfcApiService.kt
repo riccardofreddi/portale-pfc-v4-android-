@@ -42,21 +42,6 @@ interface PfcApiService {
     @GET("api/messaggi")
     suspend fun getMessaggi(@Query("username") username: String? = null): Response<MessaggiRawResponse>
 
-    @POST("api/messaggi")
-    suspend fun inviaMessaggio(@Body req: Map<String, @JvmSuppressWildcards Any>): Response<GenericOkResponse>
-
-    @PATCH("api/messaggi")
-    suspend fun patchMessaggioAction(
-        @Query("id") id: String? = null,
-        @Query("action") action: String
-    ): Response<GenericOkResponse>
-
-    @PATCH("api/messaggi")
-    suspend fun patchMessaggio(@Body req: Map<String, @JvmSuppressWildcards Any>): Response<GenericOkResponse>
-
-    @DELETE("api/messaggi")
-    suspend fun deleteMessaggio(@Query("id") id: String): Response<GenericOkResponse>
-
     @Multipart
     @POST("api/risposte/upload")
     suspend fun uploadRisposta(

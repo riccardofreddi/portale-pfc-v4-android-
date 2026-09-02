@@ -5,6 +5,7 @@ import com.example.data.local.PfcDatabase
 import com.example.data.local.entity.CachedDocumentEntity
 import com.example.data.local.entity.CachedMessaggioEntity
 import com.example.data.local.entity.CachedNotificaEntity
+import com.example.data.repository.PfcRepository
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +20,12 @@ class PfcFirebaseMessagingService : FirebaseMessagingService() {
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         Log.d(TAG, "Refreshed FCM registration token: $token")
+        serviceScope.launch {
+            try {
+                val repo = PfcRepository(applicationContext)
+                repo.registerFcmToken(token)
+            } catch (_: Exception) {}
+        }
     }
 
     override fun onMessageReceived(remoteMessage: RemoteMessage) {
@@ -28,20 +35,35 @@ class PfcFirebaseMessagingService : FirebaseMessagingService() {
         val data = remoteMessage.data
         val notification = remoteMessage.notification
 
-        val title = notification?.title ?: data["title"] ?: data["titolo"] ?: "Portale PFC"
-        val body = notification?.body ?: data["body"] ?: data["corpo"] ?: data["message"] ?: "Nuovo aggiornamento disponibile dallo Studio PFC"
-        val type = data["type"] ?: data["tipo"] ?: "general"
+        val rawType = data["type"] ?: data["tipo"] ?: "general"
+        val isUpload = rawType.contains("upload", ignoreCase = true) || rawType.contains("richiest", ignoreCase = true)
+
+        val title = notification?.title ?: data["title"] ?: data["titolo"]
+            ?: if (isUpload) "Messaggio con richiesta file" else "Portale PFC"
+        val body = notification?.body ?: data["body"] ?: data["corpo"] ?: data["message"]
+            ?: if (isUpload) "Lo Studio PFC ha inviato un messaggio con richiesta file." else "Nuovo aggiornamento disponibile dallo Studio PFC"
+        val type = rawType
         val year = data["year"] ?: data["anno"] ?: "2025"
         val folder = data["folder"] ?: data["cartella"] ?: "Dichiarazioni"
         val docKey = data["docKey"] ?: data["key"] ?: data["doc_key"] ?: "$year/$folder/${System.currentTimeMillis()}.pdf"
         val msgId = data["msgId"] ?: data["id"] ?: data["msg_id"] ?: "msg-${System.currentTimeMillis()}"
 
         // Save incoming event into local Room database for offline persistence
-        saveNotificationToDb(type, title, body, year, folder, docKey, msgId)
+        saveNotificationToDb(type, title, body, year, folder, docKey, msgId, data)
 
         // Trigger system notification banner with deep links
-        when (type.lowercase()) {
-            "document", "documento", "documento_nuovo", "f24", "bilancio" -> {
+        val lowerType = type.lowercase()
+        when {
+            lowerType.contains("upload") || lowerType.contains("richiest") -> {
+                LocalNotificationHelper.showNewMessageNotification(
+                    context = applicationContext,
+                    messageId = msgId,
+                    title = title,
+                    corpo = body,
+                    requiresUpload = true
+                )
+            }
+            lowerType.contains("document") || lowerType.contains("f24") || lowerType.contains("bilancio") -> {
                 LocalNotificationHelper.showNewDocumentNotification(
                     context = applicationContext,
                     docTitle = data["docName"] ?: data["nome"] ?: title,
@@ -50,7 +72,7 @@ class PfcFirebaseMessagingService : FirebaseMessagingService() {
                     docKey = docKey
                 )
             }
-            "message", "messaggio", "messaggio_nuovo", "comunicazione" -> {
+            lowerType.contains("msg") || lowerType.contains("messag") || lowerType.contains("comunicaz") -> {
                 val requiresUpload = data["requiresUpload"]?.toBoolean() ?: (data["richiedeUpload"]?.toBoolean() ?: false)
                 LocalNotificationHelper.showNewMessageNotification(
                     context = applicationContext,
@@ -60,7 +82,7 @@ class PfcFirebaseMessagingService : FirebaseMessagingService() {
                     requiresUpload = requiresUpload
                 )
             }
-            "deadline", "scadenza", "scadenza_fiscale" -> {
+            lowerType.contains("deadline") || lowerType.contains("scadenz") -> {
                 val scadenzaDate = data["date"] ?: data["scadenza"] ?: "16 del mese"
                 LocalNotificationHelper.showDeadlineReminderNotification(
                     context = applicationContext,
@@ -89,7 +111,8 @@ class PfcFirebaseMessagingService : FirebaseMessagingService() {
         year: String,
         folder: String,
         docKey: String,
-        msgId: String
+        msgId: String,
+        data: Map<String, String>
     ) {
         serviceScope.launch {
             try {
@@ -125,9 +148,10 @@ class PfcFirebaseMessagingService : FirebaseMessagingService() {
                     docDao.insert(newDoc)
                 }
 
-                // If it's a message, insert into cached messages
-                if (type.contains("msg") || type.contains("messagg")) {
+                // If it's a message or upload request, insert into cached messages
+                if (type.contains("msg") || type.contains("messag") || type.contains("upload") || type.contains("richiest")) {
                     val msgDao = db.messaggioDao()
+                    val isReq = type.contains("upload") || type.contains("richiest") || data["richiedeUpload"]?.toBoolean() == true
                     val newMsg = CachedMessaggioEntity(
                         id = msgId,
                         titolo = title,
@@ -135,8 +159,8 @@ class PfcFirebaseMessagingService : FirebaseMessagingService() {
                         dataInvio = "Oggi",
                         letto = false,
                         archiviato = false,
-                        richiedeUpload = false,
-                        uploadDescrizione = null,
+                        richiedeUpload = isReq,
+                        uploadDescrizione = data["uploadDescrizione"] ?: data["richiesta_dettaglio"],
                         haRisposta = false,
                         allegatoNome = null
                     )

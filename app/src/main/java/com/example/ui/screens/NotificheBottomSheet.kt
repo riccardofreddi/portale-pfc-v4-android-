@@ -153,16 +153,54 @@ fun NotificaItemRow(
     onMarkAsRead: () -> Unit
 ) {
     val lowerTipo = notif.tipo.lowercase()
+    val isUploadReq = lowerTipo.contains("upload") || lowerTipo.contains("richiest")
     val isDocument = lowerTipo.contains("doc") || lowerTipo.contains("f24") || !notif.folder.isNullOrBlank()
-    val isMessage = lowerTipo.contains("msg") || lowerTipo.contains("messag") || lowerTipo.contains("upload")
+    val isMessage = !isUploadReq && (lowerTipo.contains("msg") || lowerTipo.contains("messag") || lowerTipo.contains("comunicaz"))
     val isDeadline = lowerTipo.contains("scadenz") || lowerTipo.contains("deadlin")
 
     val style = when {
-        isDocument -> NotificaItemStyle(Icons.Filled.Description, "Fiscale & F24", GeoPrimary, "Apri in Archivio")
-        lowerTipo.contains("upload") -> NotificaItemStyle(Icons.Filled.UploadFile, "Richiesta Documento", PfcSapphire, "Invia File")
-        isMessage -> NotificaItemStyle(Icons.Filled.Chat, "Comunicazione", GeoPrimary, "Leggi Messaggio")
-        isDeadline -> NotificaItemStyle(Icons.Filled.Schedule, "Scadenza Tributaria", PfcDanger, "Verifica Scadenza")
-        else -> NotificaItemStyle(Icons.Filled.Notifications, "Avviso Studio", MaterialTheme.colorScheme.onSurfaceVariant, "Visualizza")
+        isUploadReq -> NotificaItemStyle(
+            icon = Icons.Filled.MarkEmailUnread,
+            badgeText = "Richiesta File",
+            badgeColor = PfcSapphire,
+            actionLabel = "Vai a Messaggi per allegare il file"
+        )
+        isDocument -> NotificaItemStyle(
+            icon = Icons.Filled.Description,
+            badgeText = "Fiscale & F24",
+            badgeColor = GeoPrimary,
+            actionLabel = "Apri in Archivio"
+        )
+        isMessage -> NotificaItemStyle(
+            icon = Icons.Filled.Chat,
+            badgeText = "Comunicazione",
+            badgeColor = GeoPrimary,
+            actionLabel = "Leggi nel tab Messaggi"
+        )
+        isDeadline -> NotificaItemStyle(
+            icon = Icons.Filled.Schedule,
+            badgeText = "Scadenza Tributaria",
+            badgeColor = PfcDanger,
+            actionLabel = "Verifica Scadenza"
+        )
+        else -> NotificaItemStyle(
+            icon = Icons.Filled.Notifications,
+            badgeText = "Avviso Studio",
+            badgeColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            actionLabel = "Visualizza Dettaglio"
+        )
+    }
+
+    val displayTitle = if (isUploadReq && (notif.titolo.isBlank() || notif.titolo.contains("portale", ignoreCase = true))) {
+        "Messaggio con richiesta file"
+    } else {
+        notif.titolo
+    }
+
+    val displayCorpo = if (isUploadReq && (notif.corpo.isNullOrBlank() || notif.corpo.contains("nuovo aggiornamento", ignoreCase = true))) {
+        "Lo Studio PFC ha inviato un messaggio con richiesta di invio file. Apri la sezione Messaggi per visualizzarlo e allegare il documento."
+    } else {
+        notif.corpo
     }
 
     Card(
@@ -250,16 +288,16 @@ fun NotificaItemRow(
                     Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = notif.titolo,
+                        text = displayTitle,
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = if (!notif.letta) FontWeight.Bold else FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
 
-                    if (!notif.corpo.isNullOrBlank()) {
+                    if (!displayCorpo.isNullOrBlank()) {
                         Spacer(modifier = Modifier.height(3.dp))
                         Text(
-                            text = notif.corpo,
+                            text = displayCorpo,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 17.sp

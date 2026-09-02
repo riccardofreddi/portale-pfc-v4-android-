@@ -627,9 +627,17 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
                     refreshArchivio()
                 }
             }
-            lowerTipo.contains("msg") || lowerTipo.contains("messag") || lowerTipo.contains("upload") -> {
+            lowerTipo.contains("msg") || lowerTipo.contains("messag") || lowerTipo.contains("upload") || lowerTipo.contains("richiest") -> {
                 _selectedTab.value = 1
-                _expandedMsgId.value = notif.id
+                _messaggiTab.value = 0
+                val currentAttivi = attiviMessaggi.value
+                val matched = currentAttivi.find { it.id == notif.id }
+                    ?: if (lowerTipo.contains("upload") || lowerTipo.contains("richiest")) currentAttivi.find { it.richiedeUpload && !it.haRisposta } else null
+                    ?: currentAttivi.find { notif.titolo.contains(it.titolo, ignoreCase = true) || it.titolo.contains(notif.titolo, ignoreCase = true) }
+                    ?: currentAttivi.firstOrNull()
+                if (matched != null) {
+                    _expandedMsgId.value = matched.id
+                }
                 viewModelScope.launch {
                     repository.syncMessaggi()
                 }

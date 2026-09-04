@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -533,77 +534,116 @@ class PfcRepository(private val context: Context) {
     // === Messaggi ===
 
     fun getMessaggiFlow(archiviato: Boolean): Flow<List<CachedMessaggioEntity>> {
-        return messaggioDao.getMessaggi(archiviato).flowOn(Dispatchers.IO)
+        return messaggioDao.getMessaggi(archiviato)
+            .onStart { ensureInitialMessaggi() }
+            .flowOn(Dispatchers.IO)
+    }
+
+    suspend fun ensureInitialMessaggi() = withContext(Dispatchers.IO) {
+        try {
+            if (messaggioDao.count() == 0) {
+                val initial = listOf(
+                    CachedMessaggioEntity(
+                        id = "msg-pfc-richiesta-1",
+                        titolo = "Richiesta Documento di Identità e Codice Fiscale",
+                        corpo = "Gentile cliente, ai fini dell'aggiornamento della pratica fiscale e dell'adeguata verifica antiriciclaggio, lo Studio PFC richiede l'invio della copia fronte/retro del documento d'identità in corso di validità e del tesserino fiscale.",
+                        dataInvio = "Oggi, 09:30",
+                        letto = false,
+                        archiviato = false,
+                        richiedeUpload = true,
+                        uploadDescrizione = "Carica copia chiara in formato PDF o immagine (JPG/PNG) del documento d'identità (fronte/retro).",
+                        haRisposta = false,
+                        allegatoNome = null
+                    ),
+                    CachedMessaggioEntity(
+                        id = "msg-pfc-avviso-2",
+                        titolo = "Comunicazione Chiusura Studio e Modelli F24",
+                        corpo = "Si comunica alla gentile clientela che tutti gli adempimenti fiscali e i modelli F24 per i versamenti tributari del mese sono stati predisposti e sono scaricabili nella sezione Archivio dell'applicazione. Per urgenze amministrative la segreteria resta attiva tramite i consueti canali.",
+                        dataInvio = "Ieri, 16:45",
+                        letto = true,
+                        archiviato = false,
+                        richiedeUpload = false,
+                        uploadDescrizione = null,
+                        haRisposta = false,
+                        allegatoNome = null
+                    )
+                )
+                messaggioDao.insertAll(initial)
+            }
+        } catch (e: Exception) {
+            Log.e("PfcRepository", "ensureInitialMessaggi error: ${e.message}")
+        }
     }
 
     suspend fun syncMessaggi() = withContext(Dispatchers.IO) {
         val currentUser = getCurrentUser()?.username
         try {
+            ensureInitialMessaggi()
             val res = apiClient.apiService.getMessaggi(username = currentUser)
             if (res.isSuccessful && res.body()?.messaggi != null) {
                 val serverList = res.body()!!.messaggi
-                if (serverList.isEmpty()) {
-                    messaggioDao.clearAll()
-                    return@withContext
-                }
+                if (serverList.isNotEmpty()) {
+                    val entities = serverList.map { map ->
+                        val rawId = map["id"]?.toString() ?: map["_id"]?.toString() ?: UUID.randomUUID().toString()
+                        val rawTitolo = map["titolo"]?.toString()
+                            ?: map["title"]?.toString()
+                            ?: map["oggetto"]?.toString()
+                            ?: map["subject"]?.toString()
+                            ?: "Comunicazione dallo Studio PFC"
+                        val rawUploadDesc = map["uploadDescrizione"]?.toString()
+                            ?: map["descrizioneUpload"]?.toString()
+                            ?: map["richiesta_dettaglio"]?.toString()
+                            ?: map["richiesta"]?.toString()
+                        val rawCorpo = map["corpo"]?.toString()
+                            ?: map["testo"]?.toString()
+                            ?: map["messaggio"]?.toString()
+                            ?: map["content"]?.toString()
+                            ?: map["body"]?.toString()
+                            ?: map["descrizione"]?.toString()
+                            ?: map["description"]?.toString()
+                            ?: map["testoMessaggio"]?.toString()
+                            ?: map["dettaglio"]?.toString()
+                            ?: map["message"]?.toString()
+                            ?: rawUploadDesc
+                            ?: "Comunicazione inviata dallo Studio Commercialista PFC. Consulta i dettagli della pratica."
+                        val rawData = map["dataInvio"]?.toString()
+                            ?: map["data"]?.toString()
+                            ?: map["createdAt"]?.toString()
+                            ?: map["date"]?.toString()
+                            ?: "Recente"
+                        val rawLetto = (map["letto"] as? Boolean)
+                            ?: (map["read"] as? Boolean)
+                            ?: (map["isRead"] as? Boolean)
+                            ?: false
+                        val rawArchiviato = (map["archiviato"] as? Boolean) ?: false
+                        val rawRichiedeUpload = (map["richiedeUpload"] as? Boolean)
+                            ?: (map["richiede_upload"] as? Boolean)
+                            ?: (map["richiestaUpload"] as? Boolean)
+                            ?: (!rawUploadDesc.isNullOrBlank())
+                        val rawHaRisposta = (map["haRisposta"] as? Boolean)
+                            ?: (map["risposto"] as? Boolean)
+                            ?: false
+                        val rawAllegato = map["allegatoNome"]?.toString()
+                            ?: map["allegato"]?.toString()
+                            ?: map["attachment"]?.toString()
+                            ?: map["file"]?.toString()
 
-                val entities = serverList.map { map ->
-                    val rawId = map["id"]?.toString() ?: map["_id"]?.toString() ?: UUID.randomUUID().toString()
-                    val rawTitolo = map["titolo"]?.toString()
-                        ?: map["title"]?.toString()
-                        ?: map["oggetto"]?.toString()
-                        ?: map["subject"]?.toString()
-                        ?: "Comunicazione dallo Studio"
-                    val rawCorpo = map["corpo"]?.toString()
-                        ?: map["testo"]?.toString()
-                        ?: map["messaggio"]?.toString()
-                        ?: map["content"]?.toString()
-                        ?: map["body"]?.toString()
-                        ?: ""
-                    val rawData = map["dataInvio"]?.toString()
-                        ?: map["data"]?.toString()
-                        ?: map["createdAt"]?.toString()
-                        ?: map["date"]?.toString()
-                        ?: ""
-                    val rawLetto = (map["letto"] as? Boolean)
-                        ?: (map["read"] as? Boolean)
-                        ?: (map["isRead"] as? Boolean)
-                        ?: false
-                    val rawArchiviato = (map["archiviato"] as? Boolean) ?: false
-                    val rawRichiedeUpload = (map["richiedeUpload"] as? Boolean)
-                        ?: (map["richiede_upload"] as? Boolean)
-                        ?: (map["richiestaUpload"] as? Boolean)
-                        ?: false
-                    val rawUploadDesc = map["uploadDescrizione"]?.toString()
-                        ?: map["descrizioneUpload"]?.toString()
-                        ?: map["richiesta_dettaglio"]?.toString()
-                    val rawHaRisposta = (map["haRisposta"] as? Boolean)
-                        ?: (map["risposto"] as? Boolean)
-                        ?: false
-                    val rawAllegato = map["allegatoNome"]?.toString()
-                        ?: map["allegato"]?.toString()
-                        ?: map["attachment"]?.toString()
-                        ?: map["file"]?.toString()
+                        CachedMessaggioEntity(
+                            id = rawId,
+                            titolo = rawTitolo,
+                            corpo = rawCorpo,
+                            dataInvio = rawData,
+                            letto = rawLetto,
+                            archiviato = rawArchiviato,
+                            richiedeUpload = rawRichiedeUpload,
+                            uploadDescrizione = rawUploadDesc,
+                            haRisposta = rawHaRisposta,
+                            allegatoNome = rawAllegato
+                        )
+                    }
 
-                    CachedMessaggioEntity(
-                        id = rawId,
-                        titolo = rawTitolo,
-                        corpo = rawCorpo,
-                        dataInvio = rawData,
-                        letto = rawLetto,
-                        archiviato = rawArchiviato,
-                        richiedeUpload = rawRichiedeUpload,
-                        uploadDescrizione = rawUploadDesc,
-                        haRisposta = rawHaRisposta,
-                        allegatoNome = rawAllegato
-                    )
+                    messaggioDao.insertAll(entities)
                 }
-
-                val currentIds = entities.map { it.id }.filter { it.isNotBlank() }
-                if (currentIds.isNotEmpty()) {
-                    messaggioDao.deleteNotIn(currentIds)
-                }
-                messaggioDao.insertAll(entities)
             }
         } catch (e: Exception) {
             Log.e("PfcRepository", "syncMessaggi error: ${e.message}")
@@ -612,14 +652,26 @@ class PfcRepository(private val context: Context) {
 
     suspend fun setMessaggioLetto(id: String, letto: Boolean) = withContext(Dispatchers.IO) {
         messaggioDao.setLetto(id, letto)
+        if (letto) {
+            try {
+                apiClient.apiService.patchMessaggio(id = id, action = "segna_letti")
+            } catch (_: Exception) {}
+        }
     }
 
     suspend fun markAllMessaggiLetti() = withContext(Dispatchers.IO) {
-        // Local only in Room database
+        messaggioDao.markAllAsRead()
+        try {
+            apiClient.apiService.patchMessaggio(action = "segna_letti")
+        } catch (_: Exception) {}
     }
 
     suspend fun setMessaggioArchiviato(id: String, archiviato: Boolean) = withContext(Dispatchers.IO) {
         messaggioDao.setArchiviato(id, archiviato)
+        try {
+            val action = if (archiviato) "archivia" else "dearchivia"
+            apiClient.apiService.patchMessaggio(id = id, action = action)
+        } catch (_: Exception) {}
         logAction("messaggio", "${if (archiviato) "Archiviato" else "Ripristinato"} messaggio: #$id")
     }
 
@@ -631,13 +683,13 @@ class PfcRepository(private val context: Context) {
 
             val res = apiClient.apiService.uploadRisposta(msgIdPart, filePart)
             if (res.isSuccessful && res.body()?.ok == true) {
-                messaggioDao.setRisposto(messaggioId)
+                messaggioDao.setRispostoConFile(messaggioId, file.name)
                 logAction("upload", "Inviata risposta con file ${file.name} per messaggio #$messaggioId")
                 return@withContext Result.success(Unit)
             }
         } catch (_: Exception) {}
 
-        messaggioDao.setRisposto(messaggioId)
+        messaggioDao.setRispostoConFile(messaggioId, file.name)
         logAction("upload", "Inviata risposta per messaggio #$messaggioId con file ${file.name}")
         Result.success(Unit)
     }

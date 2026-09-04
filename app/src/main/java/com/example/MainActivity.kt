@@ -355,7 +355,9 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     onToggleArchive = { viewModel.toggleArchiveMessage(it) },
                                     onSubmitUploadFile = { msgId, file ->
                                         viewModel.submitUploadReplyRealFile(msgId, file)
-                                    }
+                                    },
+                                    onMarkAllAsRead = { viewModel.markAllMessaggiAsRead() },
+                                    onToggleRead = { viewModel.toggleReadMessage(it) }
                                 )
                             }
                             2 -> {

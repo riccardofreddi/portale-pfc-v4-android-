@@ -13,7 +13,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,11 +107,60 @@ fun NotificheBottomSheet(
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
-            if (notifiche.isEmpty()) {
+            // Category Filter Chips
+            var selectedFilter by remember { mutableStateOf("tutte") } // "tutte", "non_lette", "documenti", "messaggi"
+            val filteredNotifiche = remember(notifiche, selectedFilter) {
+                when (selectedFilter) {
+                    "non_lette" -> notifiche.filter { !it.letta }
+                    "documenti" -> notifiche.filter {
+                        val t = it.tipo.lowercase()
+                        t.contains("doc") || t.contains("f24") || !it.folder.isNullOrBlank()
+                    }
+                    "messaggi" -> notifiche.filter {
+                        val t = it.tipo.lowercase()
+                        t.contains("msg") || t.contains("messag") || t.contains("upload") || t.contains("richiest")
+                    }
+                    else -> notifiche
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = selectedFilter == "tutte",
+                    onClick = { selectedFilter = "tutte" },
+                    label = { Text("Tutte (${notifiche.size})", fontSize = 12.sp) }
+                )
+                if (unreadCount > 0) {
+                    FilterChip(
+                        selected = selectedFilter == "non_lette",
+                        onClick = { selectedFilter = "non_lette" },
+                        label = { Text("Non lette ($unreadCount)", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+                    )
+                }
+                FilterChip(
+                    selected = selectedFilter == "documenti",
+                    onClick = { selectedFilter = "documenti" },
+                    label = { Text("F24 & Doc", fontSize = 12.sp) }
+                )
+                FilterChip(
+                    selected = selectedFilter == "messaggi",
+                    onClick = { selectedFilter = "messaggi" },
+                    label = { Text("Messaggi", fontSize = 12.sp) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            if (filteredNotifiche.isEmpty()) {
                 EmptyStateView(
                     icon = Icons.Outlined.NotificationsNone,
-                    title = "Nessuna notifica presente",
-                    description = "Qui riceverai comunicazioni in tempo reale dallo Studio PFC per nuovi modelli F24, bilanci, messaggi e scadenze."
+                    title = if (selectedFilter == "non_lette") "Nessuna notifica da leggere" else "Nessuna notifica presente",
+                    description = if (selectedFilter == "non_lette") "Hai letto tutti gli aggiornamenti dello Studio PFC." else "Qui riceverai comunicazioni in tempo reale dallo Studio PFC per nuovi modelli F24, bilanci, messaggi e scadenze."
                 )
             } else {
                 LazyColumn(
@@ -119,7 +168,7 @@ fun NotificheBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
-                    items(notifiche, key = { it.id }) { notif ->
+                    items(filteredNotifiche, key = { it.id }) { notif ->
                         NotificaItemRow(
                             notif = notif,
                             onClick = { onNotificaClick(notif) },

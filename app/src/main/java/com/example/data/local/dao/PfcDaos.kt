@@ -51,11 +51,20 @@ interface MessaggioDao {
     @Query("UPDATE cached_messaggi SET letto = :letto WHERE id = :id")
     suspend fun setLetto(id: String, letto: Boolean)
 
+    @Query("UPDATE cached_messaggi SET letto = 1")
+    suspend fun markAllAsRead()
+
     @Query("UPDATE cached_messaggi SET archiviato = :archiviato WHERE id = :id")
     suspend fun setArchiviato(id: String, archiviato: Boolean)
 
     @Query("UPDATE cached_messaggi SET haRisposta = 1 WHERE id = :id")
     suspend fun setRisposto(id: String)
+
+    @Query("UPDATE cached_messaggi SET haRisposta = 1, allegatoNome = :fileName WHERE id = :id")
+    suspend fun setRispostoConFile(id: String, fileName: String)
+
+    @Query("SELECT COUNT(*) FROM cached_messaggi")
+    suspend fun count(): Int
 
     @Query("DELETE FROM cached_messaggi WHERE id NOT IN (:currentIds)")
     suspend fun deleteNotIn(currentIds: List<String>)

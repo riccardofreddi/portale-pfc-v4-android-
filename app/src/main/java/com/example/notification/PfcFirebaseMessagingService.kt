@@ -148,19 +148,31 @@ class PfcFirebaseMessagingService : FirebaseMessagingService() {
                     docDao.insert(newDoc)
                 }
 
-                // If it's a message or upload request, insert into cached messages
-                if (type.contains("msg") || type.contains("messag") || type.contains("upload") || type.contains("richiest")) {
+                // If it's a message, communication, upload request, or studio notice, insert into cached messages
+                val lowerT = type.lowercase()
+                val isDoc = lowerT.contains("doc") || lowerT.contains("f24") || lowerT.contains("bilancio")
+                val isDeadline = lowerT.contains("deadline") || lowerT.contains("scadenz")
+
+                if (!isDoc && !isDeadline) {
                     val msgDao = db.messaggioDao()
-                    val isReq = type.contains("upload") || type.contains("richiest") || data["richiedeUpload"]?.toBoolean() == true
+                    val uploadDesc = data["uploadDescrizione"] ?: data["richiesta_dettaglio"] ?: data["richiesta"] ?: data["descrizioneUpload"]
+                    val isReq = lowerT.contains("upload") || lowerT.contains("richiest") ||
+                            data["requiresUpload"]?.toBoolean() == true ||
+                            data["richiedeUpload"]?.toBoolean() == true ||
+                            !uploadDesc.isNullOrBlank()
+
+                    val cleanCorpo = if (body.isNotBlank()) body else (uploadDesc ?: "Comunicazione ricevuta dallo Studio Commercialista PFC.")
+                    val cleanTitolo = if (title.isNotBlank()) title else "Comunicazione dallo Studio PFC"
+
                     val newMsg = CachedMessaggioEntity(
-                        id = msgId,
-                        titolo = title,
-                        corpo = body,
+                        id = if (msgId.isNotBlank()) msgId else "msg-${System.currentTimeMillis()}",
+                        titolo = cleanTitolo,
+                        corpo = cleanCorpo,
                         dataInvio = "Oggi",
                         letto = false,
                         archiviato = false,
                         richiedeUpload = isReq,
-                        uploadDescrizione = data["uploadDescrizione"] ?: data["richiesta_dettaglio"],
+                        uploadDescrizione = uploadDesc,
                         haRisposta = false,
                         allegatoNome = null
                     )

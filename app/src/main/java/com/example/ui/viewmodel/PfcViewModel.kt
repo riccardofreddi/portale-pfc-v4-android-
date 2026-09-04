@@ -6,6 +6,7 @@ import android.os.Environment
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.local.PfcDatabase
 import com.example.data.local.entity.*
 import com.example.data.model.*
 import com.example.data.repository.PfcRepository
@@ -516,6 +517,21 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
         _messaggiTab.value = tab
     }
 
+    fun markAllMessaggiAsRead() {
+        viewModelScope.launch {
+            repository.markAllMessaggiLetti()
+            showSnackbar("Tutti i messaggi segnati come letti")
+        }
+    }
+
+    fun toggleReadMessage(msg: CachedMessaggioEntity) {
+        viewModelScope.launch {
+            val newStatus = !msg.letto
+            repository.setMessaggioLetto(msg.id, newStatus)
+            showSnackbar(if (newStatus) "Messaggio segnato come letto" else "Messaggio contrassegnato da leggere")
+        }
+    }
+
     fun toggleExpandMessage(id: String) {
         _expandedMsgId.value = if (_expandedMsgId.value == id) null else id
         if (_expandedMsgId.value == id) {
@@ -739,14 +755,48 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
 
     fun triggerTestMessageNotification() {
         val app = getApplication<Application>()
+        val msgId = "msg-${System.currentTimeMillis()}"
+        val title = "Richiesta Documenti dallo Studio PFC"
+        val corpo = "Gentile cliente, ai fini dell'elaborazione della pratica in corso, la invitiamo ad allegare copia della visura aggiornata o del documento di identità tramite il pulsante sottostante."
+        val uploadDesc = "Si richiede il caricamento della copia del documento o visura (formato PDF o immagine)."
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val db = PfcDatabase.getInstance(app)
+            val newMsg = CachedMessaggioEntity(
+                id = msgId,
+                titolo = title,
+                corpo = corpo,
+                dataInvio = "Oggi",
+                letto = false,
+                archiviato = false,
+                richiedeUpload = true,
+                uploadDescrizione = uploadDesc,
+                haRisposta = false,
+                allegatoNome = null
+            )
+            db.messaggioDao().insert(newMsg)
+
+            val notif = CachedNotificaEntity(
+                id = "notif-$msgId",
+                tipo = "richiesta_upload",
+                titolo = title,
+                corpo = corpo,
+                letta = false,
+                dataCreazione = "Adesso",
+                year = null,
+                folder = null
+            )
+            db.notificaDao().insert(notif)
+        }
+
         LocalNotificationHelper.showNewMessageNotification(
             context = app,
-            messageId = "msg-${System.currentTimeMillis()}",
-            title = "Comunicazione dallo Studio PFC",
-            corpo = "Gentile cliente, sono disponibili nuovi documenti nella tua area riservata.",
-            requiresUpload = false
+            messageId = msgId,
+            title = title,
+            corpo = corpo,
+            requiresUpload = true
         )
-        showSnackbar("Notifica locale 'Messaggio Studio' inviata!")
+        showSnackbar("Notifica inviata e messaggio aggiunto alla tab Messaggi!")
     }
 
     fun triggerTestDeadlineNotification() {

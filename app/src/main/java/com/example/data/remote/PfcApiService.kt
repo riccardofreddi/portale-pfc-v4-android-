@@ -42,6 +42,12 @@ interface PfcApiService {
     @GET("api/messaggi")
     suspend fun getMessaggi(@Query("username") username: String? = null): Response<MessaggiRawResponse>
 
+    @PATCH("api/messaggi")
+    suspend fun patchMessaggio(
+        @Query("id") id: String? = null,
+        @Query("action") action: String
+    ): Response<GenericOkResponse>
+
     @Multipart
     @POST("api/risposte/upload")
     suspend fun uploadRisposta(

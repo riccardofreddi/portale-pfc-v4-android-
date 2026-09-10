@@ -32,7 +32,7 @@ import com.example.ui.theme.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PfcTopBar(
-    title: String = "Portale PFC",
+    title: String = "Portale",
     subtitle: String? = null,
     unreadNotifCount: Int = 0,
     userInitials: String = "PF",
@@ -64,7 +64,7 @@ fun PfcTopBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Brand Group with Monogram Emblem & Gold Ring
+                // Brand Group with PF Monogram Emblem & Gold Ring
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
@@ -89,41 +89,23 @@ fun PfcTopBar(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "PFC",
+                                text = "PF",
                                 color = PfcGold,
                                 fontWeight = FontWeight.Black,
-                                fontSize = 14.sp,
+                                fontSize = 15.sp,
                                 letterSpacing = 1.sp
                             )
                         }
                     }
 
                     Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = title,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 18.sp,
-                                letterSpacing = (-0.3).sp
-                            )
-                            Surface(
-                                color = PfcGold.copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = "CLIENTI",
-                                    color = PfcGold,
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Black,
-                                    letterSpacing = 0.8.sp,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
+                        Text(
+                            text = title,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 18.sp,
+                            letterSpacing = (-0.3).sp
+                        )
                         if (!subtitle.isNullOrBlank()) {
                             Text(
                                 text = subtitle,

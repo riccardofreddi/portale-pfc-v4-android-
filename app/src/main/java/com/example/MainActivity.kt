@@ -108,6 +108,8 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
     val hasNotificationPermission by viewModel.hasNotificationPermission.collectAsState()
 
     val snackbarHostState = remember { SnackbarHostState() }
+    val attiviMessaggi by viewModel.attiviMessaggi.collectAsState()
+    val cassettoFiles by viewModel.cassettoFiles.collectAsState()
 
     // Runtime Permission Launcher for Android 13+
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -147,25 +149,20 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
                 topBar = {
-                    val subtitle = when (selectedTab) {
-                        0 -> "Archivio Fiscale ${viewModel.selectedYear.collectAsState().value}"
-                        1 -> "Comunicazioni Studio"
-                        2 -> "Cassetto Personale"
-                        3 -> "Registro Attività"
-                        else -> currentUser?.name
-                    }
+                    val clientDisplayName = currentUser?.name?.takeIf { it.isNotBlank() }
+                        ?: currentUser?.username?.takeIf { it.isNotBlank() }
+                        ?: "Cliente"
                     PfcTopBar(
-                        title = "Portale PFC",
-                        subtitle = subtitle,
+                        title = "Portale",
+                        subtitle = "Cliente: $clientDisplayName",
                         unreadNotifCount = unreadNotifCount,
-                        userInitials = (currentUser?.name ?: "PF").take(2).uppercase(),
+                        userInitials = (currentUser?.name ?: currentUser?.username ?: "PF").take(2).uppercase(),
                         onNotifClick = { viewModel.setShowNotifSheet(true) },
                         onProfileClick = { viewModel.setShowSettingsSheet(true) }
                     )
                 },
                 bottomBar = {
-                    val attiviList by viewModel.attiviMessaggi.collectAsState()
-                    val unreadMsgCount = attiviList.count { !it.letto }
+                    val unreadMsgCount = attiviMessaggi.count { !it.letto }
 
                     NavigationBar(
                         containerColor = MaterialTheme.colorScheme.surface,
@@ -324,8 +321,10 @@ fun MainAppContent(viewModel: PfcViewModel, onActivityIntent: () -> Unit) {
                                     searchResults = searchResults,
                                     filterFavoritesOnly = filterFavoritesOnly,
                                     selectedBatchKeys = selectedBatchKeys,
-                                    archivioViewMode = archivioViewMode,
-                                    onSetArchivioViewMode = { viewModel.setArchivioViewMode(it) },
+                                    unreadMessaggiCount = attiviMessaggi.count { !it.letto },
+                                    attiviMessaggiCount = attiviMessaggi.size,
+                                    cassettoFilesCount = cassettoFiles.size,
+                                    onNavigateTab = { viewModel.setTab(it) },
                                     onSelectYear = { viewModel.selectYear(it) },
                                     onSelectCartella = { viewModel.selectCartella(it) },
                                     onSearchChange = { viewModel.setSearchQuery(it) },

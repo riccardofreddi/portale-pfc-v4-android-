@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Portale PFC</string>
+    <string name="app_name">Portale PF</string>
     <string name="nav_archivio">Archivio</string>
     <string name="nav_messaggi">Messaggi</string>
     <string name="nav_cassetto">Cassetto</string>

@@ -50,6 +50,10 @@ fun ArchivioScreen(
     searchResults: List<SearchResult>,
     filterFavoritesOnly: Boolean,
     selectedBatchKeys: Set<String>,
+    unreadMessaggiCount: Int = 0,
+    attiviMessaggiCount: Int = 0,
+    cassettoFilesCount: Int = 0,
+    onNavigateTab: (Int) -> Unit = {},
     archivioViewMode: Int = 0,
     onSetArchivioViewMode: (Int) -> Unit = {},
     onSelectYear: (String) -> Unit,
@@ -189,79 +193,6 @@ fun ArchivioScreen(
                             tint = if (filterFavoritesOnly) PfcGoldDark else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(20.dp)
                         )
-                    }
-                }
-
-                // View Mode Tabs (Cartelle vs Tutti i Documenti)
-                if (searchQuery.isBlank() && selectedCartella == null) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            .padding(3.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        // Tab Cartelle
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onSetArchivioViewMode(0) },
-                            color = if (archivioViewMode == 0) GeoPrimary else Color.Transparent,
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Folder,
-                                    contentDescription = null,
-                                    tint = if (archivioViewMode == 0) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Cartelle (${cartelle.size})",
-                                    fontSize = 12.sp,
-                                    fontWeight = if (archivioViewMode == 0) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (archivioViewMode == 0) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        // Tab Tutti i Documenti
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { onSetArchivioViewMode(1) },
-                            color = if (archivioViewMode == 1) GeoPrimary else Color.Transparent,
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(vertical = 8.dp),
-                                horizontalArrangement = Arrangement.Center,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Description,
-                                    contentDescription = null,
-                                    tint = if (archivioViewMode == 1) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Tutti i File (${files.size})",
-                                    fontSize = 12.sp,
-                                    fontWeight = if (archivioViewMode == 1) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (archivioViewMode == 1) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -461,72 +392,7 @@ fun ArchivioScreen(
                     }
                 }
 
-                // 3. Tutti i File View (when ViewMode is 1)
-                archivioViewMode == 1 -> {
-                    val displayedFiles = if (filterFavoritesOnly) {
-                        files.filter { it.isPreferito }
-                    } else files
-
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Header summary row
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "TUTTI I DOCUMENTI ($selectedYear)",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.8.sp
-                            )
-                            Text(
-                                text = "${displayedFiles.size} file totali",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-
-                        if (filesLoading) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                repeat(5) { ShimmerItem(height = 76) }
-                            }
-                        } else if (displayedFiles.isEmpty()) {
-                            EmptyStateView(
-                                icon = if (filterFavoritesOnly) Icons.Outlined.StarBorder else Icons.Outlined.FolderOpen,
-                                title = if (filterFavoritesOnly) "Nessun preferito per il $selectedYear" else "Nessun documento trovato per il $selectedYear",
-                                description = "Seleziona un altro anno o visualizza le cartelle fiscali."
-                            )
-                        } else {
-                            LazyColumn(
-                                contentPadding = PaddingValues(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                items(displayedFiles) { file ->
-                                    val isSelected = selectedBatchKeys.contains(file.key)
-                                    DocumentFileRow(
-                                        file = file,
-                                        isBatchSelected = isSelected,
-                                        isBatchMode = isBatchMode,
-                                        onFileClick = { onOpenFilePreview(file) },
-                                        onToggleFavorite = { onToggleFavorite(file) },
-                                        onToggleBatch = { onToggleBatchKey(file.key) },
-                                        onDownload = { onDownloadSingle(file) }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // 4. Root View: Folders List with Luxury Hero Banner (when ViewMode is 0)
+                // 3. Root View: Folders List with Smart Actions and Riepilogo (Archivio, Messaggi, Cassetto)
                 else -> {
                     if (cartelle.isEmpty()) {
                         EmptyStateView(
@@ -539,36 +405,36 @@ fun ArchivioScreen(
                             contentPadding = PaddingValues(16.dp),
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            // Spectacular Hero Banner Card with 3D Image & Glass Info
+                            // Smart Year Overview Banner Card with "Documenti Nuovi"
                             item {
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .shadow(8.dp, shape = RoundedCornerShape(24.dp)),
-                                    shape = RoundedCornerShape(24.dp),
-                                    border = BorderStroke(1.dp, PfcGold.copy(alpha = 0.4f))
+                                        .shadow(6.dp, shape = RoundedCornerShape(20.dp)),
+                                    shape = RoundedCornerShape(20.dp),
+                                    border = BorderStroke(1.dp, PfcGold.copy(alpha = 0.35f))
                                 ) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(185.dp)
+                                            .height(150.dp)
                                     ) {
                                         Image(
                                             painter = painterResource(id = R.drawable.img_pfc_hero),
-                                            contentDescription = "Studio PFC Banner",
+                                            contentDescription = null,
                                             modifier = Modifier.fillMaxSize(),
                                             contentScale = ContentScale.Crop
                                         )
 
-                                        // Dark luxury overlay with gradient
+                                        // Gradient overlay
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxSize()
                                                 .background(
                                                     Brush.verticalGradient(
                                                         listOf(
-                                                            PfcMidnight.copy(alpha = 0.65f),
-                                                            PfcMidnight.copy(alpha = 0.92f)
+                                                            PfcMidnight.copy(alpha = 0.70f),
+                                                            PfcMidnight.copy(alpha = 0.94f)
                                                         )
                                                     )
                                                 )
@@ -577,7 +443,7 @@ fun ArchivioScreen(
                                         Column(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .padding(18.dp),
+                                                .padding(16.dp),
                                             verticalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Row(
@@ -611,36 +477,37 @@ fun ArchivioScreen(
                                                     }
                                                 }
 
-                                                Surface(
-                                                    color = Color.White.copy(alpha = 0.15f),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Text(
-                                                        text = "CONFORMITÀ CAD",
-                                                        color = Color.White,
-                                                        fontSize = 10.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        letterSpacing = 0.5.sp,
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                                    )
-                                                }
+                                                Text(
+                                                    text = "${cartelle.size} sezioni",
+                                                    color = Color.White.copy(alpha = 0.75f),
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                )
                                             }
+
+                                            val totalNuovi = cartelle.sumOf { it.nuovi ?: 0 }
+                                            val targetCartella = cartelle.firstOrNull { (it.nuovi ?: 0) > 0 } ?: cartelle.firstOrNull()
 
                                             Column {
                                                 Text(
-                                                    text = "Archivio Fiscale & Societario",
+                                                    text = "Archivio $selectedYear",
                                                     style = MaterialTheme.typography.titleLarge,
                                                     color = Color.White,
                                                     fontWeight = FontWeight.ExtraBold,
                                                     letterSpacing = (-0.3).sp
                                                 )
                                                 Text(
-                                                    text = "Documentazione contabile, bilanci e dichiarazioni con protocollo Entratel.",
+                                                    text = "Tutti i documenti archiviati per l'anno",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    modifier = Modifier.padding(top = 2.dp)
+                                                )
+                                                Text(
+                                                    text = "Consulta e scarica i documenti fiscali e societari organizzati per cartella.",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = Color.White.copy(alpha = 0.85f),
-                                                    modifier = Modifier.padding(top = 2.dp),
-                                                    maxLines = 2,
-                                                    overflow = TextOverflow.Ellipsis
+                                                    modifier = Modifier.padding(top = 3.dp)
                                                 )
                                             }
 
@@ -649,65 +516,47 @@ fun ArchivioScreen(
                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                val totalNuovi = cartelle.sumOf { it.nuovi ?: 0 }
-                                                Text(
-                                                    text = "${cartelle.size} sezioni • ${if (totalNuovi > 0) "$totalNuovi nuovi" else "Tutti letti"}",
-                                                    color = if (totalNuovi > 0) PfcGold else PfcGoldLight,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-
-                                                Surface(
-                                                    color = PfcGold,
-                                                    shape = RoundedCornerShape(50),
-                                                    modifier = Modifier.clickable {
-                                                        if (cartelle.isNotEmpty()) onSelectCartella(cartelle.first())
-                                                    }
-                                                ) {
-                                                    Row(
-                                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                if (totalNuovi > 0 && targetCartella != null) {
+                                                    Surface(
+                                                        color = PfcGold,
+                                                        shape = RoundedCornerShape(50),
+                                                        modifier = Modifier
+                                                            .testTag("new_docs_button")
+                                                            .clickable {
+                                                                onSelectCartella(targetCartella)
+                                                            }
                                                     ) {
-                                                        Text(
-                                                            text = "Esplora",
-                                                            color = PfcMidnight,
-                                                            fontWeight = FontWeight.Bold,
-                                                            fontSize = 12.sp
-                                                        )
-                                                        Icon(
-                                                            imageVector = Icons.Filled.ArrowForward,
-                                                            contentDescription = null,
-                                                            tint = PfcMidnight,
-                                                            modifier = Modifier.size(14.dp)
-                                                        )
+                                                        Row(
+                                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Filled.NewReleases,
+                                                                contentDescription = null,
+                                                                tint = PfcMidnight,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                            Text(
+                                                                text = "Documenti Nuovi ($totalNuovi)",
+                                                                color = PfcMidnight,
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontSize = 12.sp
+                                                            )
+                                                            Icon(
+                                                                imageVector = Icons.Filled.ArrowForward,
+                                                                contentDescription = null,
+                                                                tint = PfcMidnight,
+                                                                modifier = Modifier.size(14.dp)
+                                                            )
+                                                        }
                                                     }
+                                                } else {
+                                                    Spacer(modifier = Modifier.width(1.dp))
                                                 }
                                             }
                                         }
                                     }
-                                }
-                            }
-
-                            item {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "CARTELLE FISCALI",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.8.sp
-                                    )
-                                    Text(
-                                        text = "${cartelle.size} sezioni",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        fontWeight = FontWeight.Medium
-                                    )
                                 }
                             }
 

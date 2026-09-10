@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Portale PFC"
+rootProject.name = "Portale PF"
 
 include(":app")

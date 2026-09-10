@@ -161,6 +161,8 @@ class PfcViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         LocalNotificationHelper.createNotificationChannels(application)
+        // Ensure any repeating background alarm is cancelled by default
+        ReminderScheduler.cancelReminders(application)
         if (ReminderScheduler.isRemindersEnabled(application)) {
             ReminderScheduler.scheduleReminders(application)
         }

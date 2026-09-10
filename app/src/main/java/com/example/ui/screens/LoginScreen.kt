@@ -93,67 +93,63 @@ fun LoginScreen(
                 ) {
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // 3D Luxury Crest Shield
+                    // Icona PF con stile elegante dorato/blu notte
                     Box(
                         modifier = Modifier
-                            .size(108.dp)
-                            .shadow(20.dp, shape = CircleShape, spotColor = PfcGold.copy(alpha = 0.5f))
+                            .size(96.dp)
+                            .shadow(16.dp, shape = CircleShape, spotColor = PfcGold.copy(alpha = 0.45f))
                             .clip(CircleShape)
                             .background(
                                 Brush.linearGradient(
                                     listOf(PfcGold, PfcGoldLight, PfcGoldDark)
                                 )
                             )
-                            .padding(2.5.dp),
+                            .padding(3.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.img_shield_gold),
-                            contentDescription = "Studio PFC Shield Crest",
+                        Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "STUDIO PFC",
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 1.2.sp
-                        )
-                        Surface(
-                            color = PfcGold.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(6.dp),
-                            border = BorderStroke(1.dp, PfcGold.copy(alpha = 0.4f))
+                                .clip(CircleShape)
+                                .background(
+                                    Brush.verticalGradient(
+                                        listOf(PfcMidnight, GeoPrimary)
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "PORTALE",
-                                color = PfcGold,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black,
-                                letterSpacing = 1.sp,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                text = "PF",
+                                color = PfcGoldLight,
+                                fontSize = 36.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 2.sp
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
+                    // Titolo "PORTALE" centrato
                     Text(
-                        text = "Consulenza Fiscale, Tributaria & Societaria",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = "PORTALE",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 2.5.sp,
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Sottotitolo "Accesso Archivio" centrato
+                    Text(
+                        text = "Accesso Archivio",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = PfcGold,
                         textAlign = TextAlign.Center,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 0.5.sp
                     )
 
                     Spacer(modifier = Modifier.height(24.dp))
@@ -174,13 +170,13 @@ fun LoginScreen(
                                 .padding(22.dp)
                         ) {
                             Text(
-                                text = "Accesso Area Riservata",
+                                text = "Accesso Archivio",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Inserisci le tue credenziali fiscali per consultare l'archivio.",
+                                text = "Inserisci le tue credenziali per consultare l'archivio.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(top = 2.dp, bottom = 18.dp)
@@ -221,12 +217,12 @@ fun LoginScreen(
                                 }
                             }
 
-                            // Input: Username / Codice Fiscale
+                            // Input: Username
                             OutlinedTextField(
                                 value = username,
                                 onValueChange = { username = it },
-                                label = { Text("Username o Codice Fiscale", fontSize = 13.sp) },
-                                placeholder = { Text("es. cliente o RSSMRC80A01H501U", fontSize = 13.sp) },
+                                label = { Text("Username", fontSize = 13.sp) },
+                                placeholder = { Text("Inserisci il tuo username", fontSize = 13.sp) },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Outlined.Person,
@@ -337,7 +333,7 @@ fun LoginScreen(
                                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         Text(
-                                            text = "Accedi al Portale",
+                                            text = "Accedi all'Archivio",
                                             color = Color.White,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 15.sp
@@ -391,7 +387,7 @@ fun LoginScreen(
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Accesso telematico diretto ai server Studio PFC Consulting",
+                                    text = "Archivio riservato e protetto",
                                     style = MaterialTheme.typography.bodySmall,
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -409,7 +405,7 @@ fun LoginScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Studio PFC • Piattaforma Fiscale Clienti v2.0",
+                        text = "Archivio riservato e protetto",
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
